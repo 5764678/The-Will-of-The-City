@@ -1,0 +1,1 @@
+web: gunicorn prescript_project.wsgi
