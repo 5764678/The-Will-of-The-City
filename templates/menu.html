@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Menu</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
+<body class="menu-page">
+
+    <a href="/home/" class="menu-toggle" aria-label="Go to Prescript's">←</a>
+
+    <div class="menu">
+        <div class="menu-left">
+            <img src="/static/index_logo.webp" alt="Logo" class="menu-logo">
+            <div class="menu-username">
+                <label for="usernameInput">Your name</label>
+                <input id="usernameInput" type="text" placeholder="Enter your name" autocomplete="name">
+                <button id="btnSave">Save</button>
+            </div>
+        </div>
+        <div class="menu-right">
+            <h2>Navigation</h2>
+            <nav class="menu-nav">
+                {% for link in menu_links %}
+                    <a href="{{ link.url }}" class="menu-link">{{ link.label }}</a>
+                {% endfor %}
+            </nav>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>The Will of The City</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <a href="/menu/" class="menu-toggle" aria-label="Open menu">☰</a>
+
+    <div id="terminal">
+        <div>prescript device</div>
+    </div>
+
+    <div id="userGreeting" class="user-greeting"></div>
+    <div id="prescript" data-text="{{ prescript|escapejs }}" style="height: 64px;">{{ prescript }}</div>
+    <button onclick="completePrescript()">Complete</button>
+    <button onclick="ignorePrescript()">Ignore</button>
+
+    <div id="grace">Grace: {{ grace }}</div>
+    <div id="status" style="height: 35px;"></div>
+
+    <!-- Beep sound used by status animation -->
+    <audio id="beep" src="/static/limbus_index_beeper.mp3" preload="auto"></audio>
+
+    <img src="/static/index_logo.webp" alt=""width="363" height="426">
+
+    <script src="/static/script.js"></script>
+</body>
+
+</html>

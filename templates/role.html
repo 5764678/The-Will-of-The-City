@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Role</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <a href="/menu/" class="menu-toggle" aria-label="Open menu">☰</a>
+    <a href="/home/" class="return-button" aria-label="Return to Prescript’s">←</a>
+
+    <img src="/static/index_logo.webp" class="page-logo" alt="Logo">
+
+    <main class="role-page">
+        <header class="role-header">
+            <h1>Role</h1>
+            <p class="about-subtitle" id="userGreeting"></p>
+        </header>
+
+        <section class="role-summary">
+            <div class="role-summary__details">
+                <div class="role-summary__line"><span>Grace:</span> <span id="roleScore">{{ grace }}</span></div>
+                <div class="role-summary__line"><span>Rank:</span> <span id="roleName">Civilian</span></div>
+                <div class="role-summary__desc" id="roleDescription">Your current standing within the City's network.</div>
+            </div>
+
+            <div class="role-summary__image">
+                <img id="roleImage" src="/static/role_placeholder.svg" alt="Role icon" class="role-image">
+            </div>
+        </section>
+
+        <section class="role-grid">
+            <div class="role-card" data-role="Turncoat">
+                <div class="role-card__image" style="background-image: url('/static/turncoat_image.webp');"></div>
+                <div class="role-card__title">Turncoat</div>
+                <div class="role-card__info">-1 and below. Renegade from the City’s rhythm.</div>
+                <div class="role-card__lock">
+                    <img src="/static/index_logo.webp" alt="Locked" class="role-card__lock-icon"/>
+                    <div class="role-card__lock-label">Unlocked</div>
+                </div>
+            </div>
+
+            <div class="role-card" data-role="Civilian">
+                <div class="role-card__image" style="background-image: url('/static/civilian_image.webp');"></div>
+                <div class="role-card__title">Civilian</div>
+                <div class="role-card__info">0–50. The base level; your motion is still forming.</div>
+                <div class="role-card__lock">
+                    <img src="/static/index_logo.webp" alt="Unlocked" class="role-card__lock-icon"/>
+                    <div class="role-card__lock-label">Unlocked</div>
+                </div>
+            </div>
+
+            <div class="role-card" data-role="Proselyte">
+                <div class="role-card__image" style="background-image: url('/static/proselyte_image.webp');"></div>
+                <div class="role-card__title">Proselyte</div>
+                <div class="role-card__info">51–125. You are hearing the City’s cadence.</div>
+                <div class="role-card__lock">
+                    <img src="/static/index_logo.webp" alt="Locked" class="role-card__lock-icon" />
+                    <div class="role-card__lock-label">Locked</div>
+                </div>
+            </div>
+
+            <div class="role-card" data-role="Proxy">
+                <div class="role-card__image" style="background-image: url('/static/proxy_image.webp');"></div>
+                <div class="role-card__title">Proxy</div>
+                <div class="role-card__info">126–200. You are a node, routing motion onward.</div>
+                <div class="role-card__lock">
+                    <img src="/static/index_logo.webp" alt="Locked" class="role-card__lock-icon" />
+                    <div class="role-card__lock-label">Locked</div>
+                </div>
+            </div>
+
+            <div class="role-card" data-role="Messenger">
+                <div class="role-card__image" style="background-image: url('/static/messenger_image.webp');"></div>
+                <div class="role-card__title">Messenger</div>
+                <div class="role-card__info">126–200. You are the conduit between points.</div>
+                <div class="role-card__lock">
+                    <img src="/static/index_logo.webp" alt="Locked" class="role-card__lock-icon"/>
+                    <div class="role-card__lock-label">Locked</div>
+                </div>
+            </div>
+
+            <div class="role-card" data-role="Weaver">
+                <div class="role-card__image" style="background-image: url('/static/weaver_image.webp');"></div>
+                <div class="role-card__title">Weaver</div>
+                <div class="role-card__info">201+. You shape the City’s pattern.</div>
+                <div class="role-card__lock">
+                    <img src="/static/index_logo.webp" alt="Locked" class="role-card__lock-icon" />
+                    <div class="role-card__lock-label">Locked</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

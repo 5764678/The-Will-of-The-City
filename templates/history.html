@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>History</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <a href="/menu/" class="menu-toggle" aria-label="Open menu">☰</a>
+
+    <a href="/home/" class="return-button" aria-label="Return to Prescript's">←</a>
+
+    <img src="/static/index_logo.webp" class="page-logo" alt="Logo">
+
+    <h1 id="historyHeader">History</h1>
+
+    <div id="history">
+        {% for item in history %}
+            <div class="history-item">{{ item }}</div>
+        {% endfor %}
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
