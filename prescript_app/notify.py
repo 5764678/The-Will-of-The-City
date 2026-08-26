@@ -4,6 +4,7 @@ ntfy.sh needs no account: install the app, subscribe to a private topic name (yo
 and anything POSTed to https://ntfy.sh/<topic> shows up as a push notification.
 """
 import random
+import time
 import urllib.request
 
 # Public URL of an icon ntfy will fetch and display next to the notification. Points at the
@@ -70,6 +71,36 @@ EXPIRED_TAP_MESSAGES = [
     "That one is finished. Nothing changes now.",
 ]
 
+# Fired in a burst (see send_ntfy_alarm_burst) once a prescript's been ignored several times in
+# a row — a deliberate escalation, roleplaying the City losing patience with repeated refusal.
+IGNORE_STREAK_TITLES = [
+    "DEVIATION",
+    "PATTERN BREAK",
+    "UNRESOLVED",
+    "RESPONSE OVERDUE",
+    "THIS CANNOT CONTINUE",
+]
+
+IGNORE_STREAK_MESSAGES = [
+    "The pattern has broken again.",
+    "This will not stop asking.",
+    "The City does not forget refusal.",
+    "Deviation is being logged at an increasing rate.",
+    "Something is accumulating. It has not been named yet.",
+    "Continued refusal does not go unrecorded.",
+    "The distance is no longer small.",
+    "This has happened too many times to be incidental.",
+]
+
+# Sent once, the next time you Complete something after a bad streak — the alarm stops as
+# abruptly as it started.
+STREAK_RESOLUTION_MESSAGES = [
+    "The pattern breaks. For now, that is enough.",
+    "Noted. The volume, for now, returns to silence.",
+    "The sequence ends here. Nothing more is asked of this moment.",
+    "Recorded. Whatever was accumulating has been set down.",
+]
+
 
 def send_ntfy_message(topic, message, title=None, timeout=15):
     """POST a plain text push notification to an ntfy.sh topic.
@@ -91,6 +122,32 @@ def send_ntfy_message(topic, message, title=None, timeout=15):
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.status
+
+
+def send_ntfy_alarm_burst(topic, count, timeout=15):
+    """Sends `count` back-to-back urgent-priority pushes, one after another — a deliberate
+    'the City is losing patience' spam burst, each with its own title/message and its own beep.
+
+    Capped at 5 regardless of `count` so a very long ignore streak doesn't turn into truly
+    unbounded real spam.
+    """
+    count = max(1, min(count, 5))
+    for _ in range(count):
+        headers = {
+            "Title": random.choice(IGNORE_STREAK_TITLES),
+            "Priority": "urgent",
+        }
+        if NOTIFICATION_ICON_URL:
+            headers["Icon"] = NOTIFICATION_ICON_URL
+
+        req = urllib.request.Request(
+            f"https://ntfy.sh/{topic}",
+            data=random.choice(IGNORE_STREAK_MESSAGES).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=timeout)
+        time.sleep(1)  # so they land as distinct beeps, not one bundled/collapsed notification
 
 
 def send_ntfy_prescript(topic, text, complete_url=None, ignore_url=None, timeout=15):

@@ -14,12 +14,14 @@ from prescript_app.models import UserProfile, PrescriptHistory, PendingNotificat
 from .prescripts import generate_prescript
 from . import grace as grace_module
 from .notify import (
+    send_ntfy_alarm_burst,
     send_ntfy_message,
     send_ntfy_prescript,
     COMPLETE_CONFIRMATIONS,
     IGNORE_CONFIRMATIONS,
     EXPIRED_MESSAGES,
     EXPIRED_TAP_MESSAGES,
+    STREAK_RESOLUTION_MESSAGES,
 )
 
 # How long a notification's prescript stays actionable. Tap Complete/Ignore within this window
@@ -27,6 +29,11 @@ from .notify import (
 # (see _expire_stale_pending). Comfortably above the 30-minute sweep interval so a normal delay
 # in noticing your phone doesn't cost you anything.
 PRESCRIPT_TIME_LIMIT = datetime.timedelta(minutes=40)
+
+# Ignore 3 in a row (however they get ignored — an explicit tap or an unanswered timeout, both
+# count) and the alarm burst kicks in. Each ignore beyond that sends one more message in the
+# burst than the last, capped at 5 (see send_ntfy_alarm_burst).
+IGNORE_SPAM_THRESHOLD = 3
 
 # Indochina Time — fixed UTC+7 year-round, no DST to account for.
 NOTIFY_TZ = ZoneInfo("Asia/Bangkok")
@@ -189,6 +196,46 @@ def _record_history(username, text, action):
     PrescriptHistory.objects.create(user=profile, text=text, action=action)
 
 
+def _current_ignore_streak(profile):
+    """How many of this user's most recent history entries, counting back from the newest, are
+    consecutive Ignores. Stops at the first Completed (or at the start of history)."""
+    streak = 0
+    for h in profile.history.all():  # already ordered newest-first (PrescriptHistory.Meta)
+        if h.action == PrescriptHistory.IGNORED:
+            streak += 1
+        else:
+            break
+    return streak
+
+
+def _maybe_trigger_ignore_alarm(profile):
+    """Call right after recording an Ignore (explicit tap or auto-expired timeout — both count
+    the same). Fires an escalating alarm burst once the streak crosses IGNORE_SPAM_THRESHOLD."""
+    if not profile:
+        return
+    streak = _current_ignore_streak(profile)
+    if streak < IGNORE_SPAM_THRESHOLD:
+        return
+    topic = os.environ.get('NTFY_TOPIC')
+    if not topic:
+        return
+    burst_size = streak - IGNORE_SPAM_THRESHOLD + 1
+    try:
+        send_ntfy_alarm_burst(topic, burst_size)
+    except Exception:
+        pass
+
+
+def _maybe_send_streak_resolution(profile):
+    """Call right before recording a Complete — if there was an active bad streak going into
+    it, send a one-off message acknowledging it broke. Reads history from *before* this
+    Complete is recorded, so call this first."""
+    if not profile:
+        return
+    if _current_ignore_streak(profile) >= IGNORE_SPAM_THRESHOLD:
+        _maybe_notify(random.choice(STREAK_RESOLUTION_MESSAGES))
+
+
 def complete(request): # This function handles the completion of a prescript task by the user. It updates the user's grace score based on the reward for completing the task, records the action in the history, and generates a new prescript for the next task. The function also manages user profiles and updates the database accordingly if a username is provided in the request. Finally, it returns a JsonResponse containing the new grace score, status, and the next prescript to be displayed to the user.
     current_text, current_reward, current_punishment, source, token = _resolve_current(request)
 
@@ -217,6 +264,7 @@ def complete(request): # This function handles the completion of a prescript tas
     else:
         grace_module.set_grace(new_grace)
 
+    _maybe_send_streak_resolution(profile)  # check before recording, so it sees the streak that's about to break
     _record_history(username, current_text, PrescriptHistory.COMPLETED)
 
     if source == 'token':
@@ -261,6 +309,7 @@ def ignore(request): # This function handles the case when a user chooses to ign
         grace_module.set_grace(new_grace)
 
     _record_history(username, current_text, PrescriptHistory.IGNORED)
+    _maybe_trigger_ignore_alarm(profile)
 
     if source == 'token':
         _maybe_notify(random.choice(IGNORE_CONFIRMATIONS))
@@ -364,6 +413,7 @@ def _expire_stale_pending(username):
         pending.save()
 
         _maybe_notify(random.choice(EXPIRED_MESSAGES))
+        _maybe_trigger_ignore_alarm(profile)
 
 
 def notify_trigger(request):
