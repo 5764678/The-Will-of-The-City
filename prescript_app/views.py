@@ -114,6 +114,24 @@ def _maybe_notify(message):
         pass
 
 
+def _claim_pending_or_reject(token):
+    """Atomically claim a notification's PendingNotification row so it can be scored at most
+    once, no matter how many times Complete/Ignore gets tapped on it.
+
+    Must run BEFORE any grace/history changes — this used to happen after scoring, which meant
+    a second tap on the same still-valid token (within its 40-minute window) scored it again.
+
+    Returns True if it's safe to proceed with scoring, False if this token was already used
+    (caller should bail out without touching grace/history at all). If no PendingNotification
+    row exists for this token at all (e.g. NOTIFY_USERNAME wasn't configured when it was sent,
+    so nothing was ever tracked), there's nothing to enforce — treat it as safe to proceed.
+    """
+    if not PendingNotification.objects.filter(token=token).exists():
+        return True
+    claimed = PendingNotification.objects.filter(token=token, resolved=False).update(resolved=True)
+    return claimed > 0
+
+
 @method_decorator(ensure_csrf_cookie, name='dispatch')
 class home(TemplateView): # This class defines the view for the home page of the application, which displays the current prescript and the user's grace score. It inherits from TemplateView and specifies 'index.html' as the template to render. The get_context_data method is overridden to generate a new prescript, update the current reward and punishment values, and include the prescript text and grace score in the context passed to the template for rendering.
     template_name = 'index.html'
@@ -178,6 +196,10 @@ def complete(request): # This function handles the completion of a prescript tas
         _maybe_notify(random.choice(EXPIRED_TAP_MESSAGES))
         return JsonResponse({'status': 'expired'}, status=410)
 
+    if source == 'token' and not _claim_pending_or_reject(token):
+        _maybe_notify(random.choice(EXPIRED_TAP_MESSAGES))
+        return JsonResponse({'status': 'already_handled'}, status=409)
+
     username = request.GET.get('username') or request.POST.get('username')
     base_grace = grace_module.get_grace()
 
@@ -198,7 +220,6 @@ def complete(request): # This function handles the completion of a prescript tas
     _record_history(username, current_text, PrescriptHistory.COMPLETED)
 
     if source == 'token':
-        PendingNotification.objects.filter(token=token, resolved=False).update(resolved=True)
         _maybe_notify(random.choice(COMPLETE_CONFIRMATIONS))
 
     text, reward, punishment = generate_prescript()
@@ -217,6 +238,10 @@ def ignore(request): # This function handles the case when a user chooses to ign
     if source == 'expired_token':
         _maybe_notify(random.choice(EXPIRED_TAP_MESSAGES))
         return JsonResponse({'status': 'expired'}, status=410)
+
+    if source == 'token' and not _claim_pending_or_reject(token):
+        _maybe_notify(random.choice(EXPIRED_TAP_MESSAGES))
+        return JsonResponse({'status': 'already_handled'}, status=409)
 
     username = request.GET.get('username') or request.POST.get('username')
     base_grace = grace_module.get_grace()
@@ -238,7 +263,6 @@ def ignore(request): # This function handles the case when a user chooses to ign
     _record_history(username, current_text, PrescriptHistory.IGNORED)
 
     if source == 'token':
-        PendingNotification.objects.filter(token=token, resolved=False).update(resolved=True)
         _maybe_notify(random.choice(IGNORE_CONFIRMATIONS))
 
     text, reward, punishment = generate_prescript()

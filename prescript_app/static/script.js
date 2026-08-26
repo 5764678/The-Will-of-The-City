@@ -50,10 +50,18 @@ function animateStatus(message) {                       // This function creates
     }, 100);
 }
 
-function completePrescript() {         // This function is called when the user completes a prescript. It sends a request to the server to process the completion, updates the UI with the new 
+function setActionButtonsDisabled(disabled) {  // Disables both buttons while a Complete/Ignore request is in flight, so a fast
+    const completeBtn = document.getElementById("completeBtn"); // double-click (or double-tap) can't fire a second request against the same
+    const ignoreBtn = document.getElementById("ignoreBtn");     // prescript before the first one's response has replaced it.
+    if (completeBtn) completeBtn.disabled = disabled;
+    if (ignoreBtn) ignoreBtn.disabled = disabled;
+}
+
+function completePrescript() {         // This function is called when the user completes a prescript. It sends a request to the server to process the completion, updates the UI with the new
     const username = getStoredName();  // grace score and prescript, and triggers the appropriate status animation based on whether the action was successful or not.
     const url = username ? `/complete/?username=${encodeURIComponent(username)}` : "/complete/";
 
+    setActionButtonsDisabled(true);
     fetch(url)
         .then(response => response.json())
         .then(data => {
@@ -83,13 +91,15 @@ function completePrescript() {         // This function is called when the user 
                 ;
                 // location.reload();
             }, 2500);
-        });
+        })
+        .finally(() => setActionButtonsDisabled(false));
 }
 
-function ignorePrescript() {           // This function is called when the user chooses to ignore a prescript. It sends a request to the server to process the ignore action, updates the UI with the 
+function ignorePrescript() {           // This function is called when the user chooses to ignore a prescript. It sends a request to the server to process the ignore action, updates the UI with the
     const username = getStoredName();  // new grace score and prescript, and triggers a "Failed" status animation since ignoring is considered a failure in terms of grace.
     const url = username ? `/ignore/?username=${encodeURIComponent(username)}` : "/ignore/";
 
+    setActionButtonsDisabled(true);
     fetch(url)
         .then(response => response.json())
         .then(data => {
@@ -117,7 +127,8 @@ function ignorePrescript() {           // This function is called when the user 
             setTimeout(() => {
                 ;
             }, 2500);
-        });
+        })
+        .finally(() => setActionButtonsDisabled(false));
 }
 
 

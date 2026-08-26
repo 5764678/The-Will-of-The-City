@@ -16,8 +16,8 @@
 
     <div id="userGreeting" class="user-greeting"></div>
     <div id="prescript" data-text="{{ prescript|escapejs }}" style="height: 64px;">{{ prescript }}</div>
-    <button onclick="completePrescript()">Complete</button>
-    <button onclick="ignorePrescript()">Ignore</button>
+    <button id="completeBtn" onclick="completePrescript()">Complete</button>
+    <button id="ignoreBtn" onclick="ignorePrescript()">Ignore</button>
 
     <div id="grace">Grace: {{ grace }}</div>
     <div id="status" style="height: 35px;"></div>
