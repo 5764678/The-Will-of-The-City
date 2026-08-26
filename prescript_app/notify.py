@@ -1,10 +1,16 @@
-"""Pushes a prescript to your phone as a notification via ntfy.sh (https://ntfy.sh).
+"""Pushes prescripts and outcome confirmations to your phone via ntfy.sh (https://ntfy.sh).
 
 ntfy.sh needs no account: install the app, subscribe to a private topic name (your "secret"),
 and anything POSTed to https://ntfy.sh/<topic> shows up as a push notification.
 """
 import random
 import urllib.request
+
+# Public URL of an icon ntfy will fetch and display next to the notification. Points at the
+# deployed site's own static file — ntfy needs a real reachable URL, not a local path, so this
+# has to be the live Render URL rather than localhost (which is why it's not configurable via
+# NOTIFY_TRIGGER's request.build_absolute_uri — that'd break for local/dev runs of this command).
+NOTIFICATION_ICON_URL = "https://will-of-the-city.onrender.com/static/notify_icon.png"
 
 # Rotated randomly so notifications don't all open the same way. Kept flat and indifferent —
 # not urgent or demanding — to match the cold, procedural voice used everywhere else in the
@@ -18,6 +24,73 @@ NOTIFICATION_TITLES = [
     "THIS WAS ALREADY EXPECTED.",
     "ACCOUNTED FOR.",
 ]
+
+# Sent back as a follow-up push the moment you tap Complete on a notification. Title-less on
+# purpose (see send_ntfy_message) — a short, undecorated line reads as an outcome, not a new task.
+COMPLETE_CONFIRMATIONS = [
+    "The City is content, for now.",
+    "Recorded without objection.",
+    "This one aligned. Nothing more is owed.",
+    "Filed as completed. The distance narrows slightly.",
+    "Noted. The pattern holds.",
+    "Acknowledged. Continue as before.",
+    "The motion was accepted.",
+    "This resolved the way it was meant to.",
+]
+
+# Sent back the moment you tap Ignore on a notification.
+IGNORE_CONFIRMATIONS = [
+    "Filed as ignored. The distance widens slightly.",
+    "Noted. Nothing further will be said about it.",
+    "This one will not be revisited.",
+    "The City does not insist twice.",
+    "Recorded as refusal. No explanation required.",
+    "This was allowed to pass. Not forgiven — allowed.",
+    "The gap remains, unremarked upon.",
+    "The pattern continues without you, this time.",
+]
+
+# Sent when a prescript's time limit runs out with no response at all — auto-filed as ignored.
+EXPIRED_MESSAGES = [
+    "This one went unanswered. Filed as ignored.",
+    "The window closed on its own. Recorded as refusal.",
+    "No response arrived in time. The City assumed one anyway.",
+    "Unattended. Logged as ignored, as expected.",
+    "The moment passed without you. That, too, is on record.",
+    "Silence was taken as an answer.",
+]
+
+# Sent if you tap Complete/Ignore after it already expired and was auto-filed — so the tap isn't
+# silently swallowed with no feedback at all.
+EXPIRED_TAP_MESSAGES = [
+    "Too late. This one was already filed as ignored.",
+    "This moment has already closed.",
+    "The window for this one is gone. Wait for the next.",
+    "Already recorded, without your input.",
+    "That one is finished. Nothing changes now.",
+]
+
+
+def send_ntfy_message(topic, message, title=None, timeout=15):
+    """POST a plain text push notification to an ntfy.sh topic.
+
+    Used for outcome confirmations (Complete/Ignore/expired) rather than a new prescript —
+    left title-less by default so it visually reads as a short reply, not a new task arriving.
+    """
+    headers = {"Priority": "default"}
+    if title:
+        headers["Title"] = title
+    if NOTIFICATION_ICON_URL:
+        headers["Icon"] = NOTIFICATION_ICON_URL
+
+    req = urllib.request.Request(
+        f"https://ntfy.sh/{topic}",
+        data=message.encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.status
 
 
 def send_ntfy_prescript(topic, text, complete_url=None, ignore_url=None, timeout=15):
@@ -33,6 +106,8 @@ def send_ntfy_prescript(topic, text, complete_url=None, ignore_url=None, timeout
         "Title": title,
         "Priority": "default",
     }
+    if NOTIFICATION_ICON_URL:
+        headers["Icon"] = NOTIFICATION_ICON_URL
 
     actions = []
     if complete_url:

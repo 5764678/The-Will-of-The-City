@@ -1,4 +1,6 @@
+import datetime
 import os
+import random
 from zoneinfo import ZoneInfo
 
 from django.core import signing
@@ -8,14 +10,23 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView
 
-from prescript_app.models import UserProfile, PrescriptHistory
+from prescript_app.models import UserProfile, PrescriptHistory, PendingNotification
 from .prescripts import generate_prescript
 from . import grace as grace_module
-from .notify import send_ntfy_prescript
+from .notify import (
+    send_ntfy_message,
+    send_ntfy_prescript,
+    COMPLETE_CONFIRMATIONS,
+    IGNORE_CONFIRMATIONS,
+    EXPIRED_MESSAGES,
+    EXPIRED_TAP_MESSAGES,
+)
 
-# Notification action buttons stay valid for this long after being sent, in case you don't
-# see the phone notification right away.
-NOTIFY_TOKEN_MAX_AGE = 60 * 60 * 12
+# How long a notification's prescript stays actionable. Tap Complete/Ignore within this window
+# and it scores normally; let it run out and the next scheduled trigger auto-files it as ignored
+# (see _expire_stale_pending). Comfortably above the 30-minute sweep interval so a normal delay
+# in noticing your phone doesn't cost you anything.
+PRESCRIPT_TIME_LIMIT = datetime.timedelta(minutes=40)
 
 # Indochina Time — fixed UTC+7 year-round, no DST to account for.
 NOTIFY_TZ = ZoneInfo("Asia/Bangkok")
@@ -65,24 +76,42 @@ def _set_current(request, text, reward, punishment):
 
 
 def _resolve_current(request):
-    """Figure out which prescript is being acted on.
+    """Figure out which prescript is being acted on, and where it came from.
 
-    Normally that's whatever's tracked in the session for this browser (_get_current). But a
-    tap on a Complete/Ignore button inside a phone push notification arrives as a plain,
-    session-less HTTP request — there's no browser session to read. For that case the
-    notification's action URL carries a `p` token (see notify_trigger) signed with
-    django.core.signing, which is verified and trusted here instead.
+    Normally that's whatever's tracked in the session for this browser (_get_current) — source
+    'session'. But a tap on a Complete/Ignore button inside a phone push notification arrives as
+    a plain, session-less HTTP request. For that case the notification's action URL carries a
+    `p` token (see notify_trigger) signed with django.core.signing — source 'token' if it's still
+    within its time limit, or 'expired_token' if you tapped after PRESCRIPT_TIME_LIMIT ran out
+    (in which case it was likely already auto-filed as ignored by the next sweep — see
+    _expire_stale_pending — so nothing here should be scored again).
+
+    Returns (text, reward, punishment, source, token).
     """
     token = request.GET.get('p') or request.POST.get('p')
     if token:
         try:
-            data = signing.loads(token, max_age=NOTIFY_TOKEN_MAX_AGE)
-            return data['text'], data['reward'], data['punishment']
+            data = signing.loads(token, max_age=PRESCRIPT_TIME_LIMIT.total_seconds())
+            return data['text'], data['reward'], data['punishment'], 'token', token
+        except signing.SignatureExpired:
+            return None, None, None, 'expired_token', token
         except signing.BadSignature:
-            pass  # fall through to the normal session-based prescript
+            pass  # malformed/tampered — fall through to the normal session-based prescript
 
     current = _get_current(request)
-    return current['text'], current['reward'], current['punishment']
+    return current['text'], current['reward'], current['punishment'], 'session', None
+
+
+def _maybe_notify(message):
+    """Best-effort push of a short outcome message — only if NTFY_TOPIC is configured. Never
+    raises: a notification hiccup shouldn't break scoring, which already happened by this point."""
+    topic = os.environ.get('NTFY_TOPIC')
+    if not topic:
+        return
+    try:
+        send_ntfy_message(topic, message)
+    except Exception:
+        pass
 
 
 @method_decorator(ensure_csrf_cookie, name='dispatch')
@@ -143,7 +172,11 @@ def _record_history(username, text, action):
 
 
 def complete(request): # This function handles the completion of a prescript task by the user. It updates the user's grace score based on the reward for completing the task, records the action in the history, and generates a new prescript for the next task. The function also manages user profiles and updates the database accordingly if a username is provided in the request. Finally, it returns a JsonResponse containing the new grace score, status, and the next prescript to be displayed to the user.
-    current_text, current_reward, current_punishment = _resolve_current(request)
+    current_text, current_reward, current_punishment, source, token = _resolve_current(request)
+
+    if source == 'expired_token':
+        _maybe_notify(random.choice(EXPIRED_TAP_MESSAGES))
+        return JsonResponse({'status': 'expired'}, status=410)
 
     username = request.GET.get('username') or request.POST.get('username')
     base_grace = grace_module.get_grace()
@@ -164,6 +197,10 @@ def complete(request): # This function handles the completion of a prescript tas
 
     _record_history(username, current_text, PrescriptHistory.COMPLETED)
 
+    if source == 'token':
+        PendingNotification.objects.filter(token=token, resolved=False).update(resolved=True)
+        _maybe_notify(random.choice(COMPLETE_CONFIRMATIONS))
+
     text, reward, punishment = generate_prescript()
     _set_current(request, text, reward, punishment)
 
@@ -175,7 +212,11 @@ def complete(request): # This function handles the completion of a prescript tas
 
 
 def ignore(request): # This function handles the case when a user chooses to ignore a prescript task. It updates the user's grace score based on the punishment for ignoring the task, records the action in the history, and generates a new prescript for the next task. Similar to the complete function, it manages user profiles and updates the database if a username is provided in the request. Finally, it returns a JsonResponse containing the new grace score, status, and the next prescript to be displayed to the user.
-    current_text, current_reward, current_punishment = _resolve_current(request)
+    current_text, current_reward, current_punishment, source, token = _resolve_current(request)
+
+    if source == 'expired_token':
+        _maybe_notify(random.choice(EXPIRED_TAP_MESSAGES))
+        return JsonResponse({'status': 'expired'}, status=410)
 
     username = request.GET.get('username') or request.POST.get('username')
     base_grace = grace_module.get_grace()
@@ -195,6 +236,10 @@ def ignore(request): # This function handles the case when a user chooses to ign
         grace_module.set_grace(new_grace)
 
     _record_history(username, current_text, PrescriptHistory.IGNORED)
+
+    if source == 'token':
+        PendingNotification.objects.filter(token=token, resolved=False).update(resolved=True)
+        _maybe_notify(random.choice(IGNORE_CONFIRMATIONS))
 
     text, reward, punishment = generate_prescript()
     _set_current(request, text, reward, punishment)
@@ -271,6 +316,32 @@ def get_history(request): # Returns this username's persisted prescript history 
     })
 
 
+def _expire_stale_pending(username):
+    """Auto-file any prescript that's been sent to `username` and left unanswered past
+    PRESCRIPT_TIME_LIMIT as ignored — same scoring path as tapping Ignore, plus a push telling
+    you it happened. Runs at the top of every notify_trigger call."""
+    if not username:
+        return
+
+    cutoff = timezone.now() - PRESCRIPT_TIME_LIMIT
+    stale = PendingNotification.objects.filter(username=username, resolved=False, sent_at__lt=cutoff)
+
+    for pending in stale:
+        profile, _ = UserProfile.objects.get_or_create(name=username)
+        base_grace = profile.grace if profile.grace is not None else 0
+        new_grace = grace_module.update_grace(False, pending.reward, pending.punishment, base_grace)
+        profile.grace = new_grace
+        profile.total_punishments += 1
+        profile.save()
+
+        PrescriptHistory.objects.create(user=profile, text=pending.text, action=PrescriptHistory.IGNORED)
+
+        pending.resolved = True
+        pending.save()
+
+        _maybe_notify(random.choice(EXPIRED_MESSAGES))
+
+
 def notify_trigger(request):
     """Generates a prescript and pushes it to your phone via ntfy.sh.
 
@@ -281,7 +352,8 @@ def notify_trigger(request):
     Configure via environment variables on the host:
       NOTIFY_TRIGGER_SECRET  required — must match the X-Notify-Secret header the caller sends
       NTFY_TOPIC             required — your ntfy.sh topic name (subscribe to it in the ntfy app)
-      NOTIFY_USERNAME        optional — username whose Grace the Complete/Ignore buttons affect
+      NOTIFY_USERNAME        optional — username whose Grace the Complete/Ignore buttons affect,
+                              and who unanswered prescripts get auto-filed against
     """
     secret = os.environ.get('NOTIFY_TRIGGER_SECRET')
     if not secret or request.headers.get('X-Notify-Secret') != secret:
@@ -293,6 +365,8 @@ def notify_trigger(request):
 
     username = os.environ.get('NOTIFY_USERNAME', '')
 
+    _expire_stale_pending(username)
+
     context = _current_notify_context()
     text, reward, punishment = generate_prescript(context=context)
     token = signing.dumps({'text': text, 'reward': reward, 'punishment': punishment})
@@ -301,6 +375,11 @@ def notify_trigger(request):
     username_qs = f"&username={username}" if username else ""
     complete_url = f"{base_url}/complete/?p={token}{username_qs}"
     ignore_url = f"{base_url}/ignore/?p={token}{username_qs}"
+
+    if username:
+        PendingNotification.objects.create(
+            username=username, text=text, reward=reward, punishment=punishment, token=token,
+        )
 
     try:
         send_ntfy_prescript(topic, text, complete_url=complete_url, ignore_url=ignore_url)
