@@ -6,15 +6,17 @@ and anything POSTed to https://ntfy.sh/<topic> shows up as a push notification.
 import random
 import urllib.request
 
-# Rotated randomly so notifications don't all open the same way — keeps the in-universe,
-# "mysterious yet specific" tone established across the rest of the app's copy.
+# Rotated randomly so notifications don't all open the same way. Kept flat and indifferent —
+# not urgent or demanding — to match the cold, procedural voice used everywhere else in the
+# app's copy (see the About page: it doesn't ask, it just states).
 NOTIFICATION_TITLES = [
     "PRESCRIPT ISSUED",
-    "THE CITY REQUIRES SOMETHING OF YOU",
     "A PRESCRIPT ARRIVES",
-    "YOUR ATTENTION IS REQUESTED",
-    "MOTION HAS BEEN LOGGED",
-    "THIS WAS ALREADY EXPECTED OF YOU",
+    "NOTED.",
+    "RECORDED.",
+    "MOTION LOGGED.",
+    "THIS WAS ALREADY EXPECTED.",
+    "ACCOUNTED FOR.",
 ]
 
 
@@ -30,7 +32,6 @@ def send_ntfy_prescript(topic, text, complete_url=None, ignore_url=None, timeout
     headers = {
         "Title": title,
         "Priority": "default",
-        "Tags": "bell",
     }
 
     actions = []
