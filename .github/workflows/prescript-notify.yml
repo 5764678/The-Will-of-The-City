@@ -1,16 +1,24 @@
 name: Send prescript notifications
 
-# All cron times below are UTC. Local schedule (UTC+7): 07:00, 09:50, 11:30, 14:10, 16:00, 20:00.
-# GitHub's scheduler isn't minute-precise under load — expect a few minutes of drift.
+# All cron times below are UTC. Local zone is UTC+7 (no DST, so this mapping never changes).
+#
+# Ambient sweep: every 30 minutes, 07:00-20:00 local. This also happens to land exactly on 4 of
+# the 6 themed anchor times below (07:00, 11:30, 16:00, 20:00) — the server picks the themed
+# trigger pool for those based on the actual clock (see _current_notify_context in views.py),
+# not from anything encoded here, so there's no double-firing and nothing else to keep in sync.
+#
+# The other 2 anchor times (09:50, 14:10) don't land on the :00/:30 grid, so they need their own
+# entries. Every other slot in the sweep gets an unthemed, default-style prescript.
+#
+# GitHub's scheduler isn't minute-precise under load (more so right at :00/:30, which is peak
+# load across all of GitHub Actions) — expect occasional drift of a few minutes either way.
 on:
   schedule:
-    - cron: "0 0 * * *"   # 07:00 UTC+7
-    - cron: "50 2 * * *"  # 09:50 UTC+7
-    - cron: "30 4 * * *"  # 11:30 UTC+7
-    - cron: "10 7 * * *"  # 14:10 UTC+7
-    - cron: "0 9 * * *"   # 16:00 UTC+7
-    - cron: "0 13 * * *"  # 20:00 UTC+7
-  workflow_dispatch: {}   # lets you fire a test notification manually from the Actions tab
+    - cron: "0,30 0-12 * * *"  # every 30 min, 07:00-19:30 local
+    - cron: "50 2 * * *"       # 09:50 local — just finished morning uni course
+    - cron: "10 7 * * *"       # 14:10 local — afternoon break
+    - cron: "0 13 * * *"       # 20:00 local — night / end of sweep
+  workflow_dispatch: {}        # lets you fire a test notification manually from the Actions tab
 
 jobs:
   notify:

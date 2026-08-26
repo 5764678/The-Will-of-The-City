@@ -1,7 +1,9 @@
 import os
+from zoneinfo import ZoneInfo
 
 from django.core import signing
 from django.http import JsonResponse
+from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView
@@ -14,6 +16,34 @@ from .notify import send_ntfy_prescript
 # Notification action buttons stay valid for this long after being sent, in case you don't
 # see the phone notification right away.
 NOTIFY_TOKEN_MAX_AGE = 60 * 60 * 12
+
+# Indochina Time — fixed UTC+7 year-round, no DST to account for.
+NOTIFY_TZ = ZoneInfo("Asia/Bangkok")
+
+# Scheduled notification times (local, UTC+7) and the window of minutes-since-midnight around
+# each one that should get that context's themed trigger pool (see context_triggers in
+# prescripts.py). Anything outside every window (i.e. the ambient 30-minute sweep in between)
+# falls through to the default, unthemed trigger pool — same as every prescript generated
+# through the website itself. Widened a bit past the exact minute to absorb scheduler drift
+# (GitHub Actions cron isn't guaranteed to fire on the exact minute).
+NOTIFY_CONTEXT_WINDOWS = [
+    ('morning', 6 * 60 + 30, 8 * 60),            # ~06:30-08:00 -> 07:00 anchor
+    ('post_class', 9 * 60 + 35, 10 * 60 + 5),    # ~09:35-10:05 -> 09:50 anchor (just finished uni)
+    ('lunch', 11 * 60 + 15, 11 * 60 + 50),       # ~11:15-11:50 -> 11:30 anchor
+    ('afternoon_break', 13 * 60 + 55, 14 * 60 + 30),  # ~13:55-14:30 -> 14:10 anchor
+    ('dismissed', 15 * 60 + 45, 16 * 60 + 15),   # ~15:45-16:15 -> 16:00 anchor
+    ('night', 19 * 60 + 30, 20 * 60 + 30),       # ~19:30-20:30 -> 20:00 anchor
+]
+
+
+def _current_notify_context():
+    """Which themed context (if any) the current local time falls into."""
+    local_now = timezone.now().astimezone(NOTIFY_TZ)
+    minutes = local_now.hour * 60 + local_now.minute
+    for name, start, end in NOTIFY_CONTEXT_WINDOWS:
+        if start <= minutes <= end:
+            return name
+    return None
 
 SESSION_KEY = 'current_prescript'  # Holds {'text', 'reward', 'punishment'} for the prescript currently on screen.
                                     # Stored per-session (instead of as module globals) so two visitors hitting the
@@ -263,7 +293,8 @@ def notify_trigger(request):
 
     username = os.environ.get('NOTIFY_USERNAME', '')
 
-    text, reward, punishment = generate_prescript()
+    context = _current_notify_context()
+    text, reward, punishment = generate_prescript(context=context)
     token = signing.dumps({'text': text, 'reward': reward, 'punishment': punishment})
 
     base_url = request.build_absolute_uri('/').rstrip('/')

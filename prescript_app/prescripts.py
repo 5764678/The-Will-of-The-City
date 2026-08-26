@@ -601,15 +601,109 @@ relational_actions = [
     "respond to the subtext without acknowledging the text",
 ]
 
+# Context-flavored trigger pools for the scheduled phone notifications (see notify_trigger in
+# views.py). Only the *trigger* clause changes per context — everything downstream (actions,
+# extra layers, endings, the manual_rare chance) is pulled from the exact same shared pools
+# used everywhere else, so a themed prescript is built by the identical machine, just anchored
+# to a different moment. Keep additions to this same voice: short When/After/Before clauses,
+# sensory and abstract, never literal ("brush your teeth") — the theme should color the trigger,
+# not turn it into an instruction.
+context_triggers = {
+    'morning': [
+        "After your alarm rings for the second time",
+        "When the light first crosses the floor",
+        "Before your eyes fully adjust to the room",
+        "After the first sound from outside reaches you",
+        "When your reflection appears half-formed in the mirror",
+        "Before the day has decided its shape",
+        "After the kettle's sound changes pitch",
+        "When yesterday's version of you is still nearby",
+        "Before your first full sentence of the day",
+        "After the silence of the night gives way",
+        "When your feet meet the floor for the first time",
+        "Before checking anything you did not choose to check",
+        "After the room remembers you're in it",
+        "When your first decision of the day arrives unasked",
+        "Before the morning has a name yet",
+    ],
+    'post_class': [
+        "After the room empties faster than you do",
+        "When the door closes on what was just explained",
+        "Before the hallway absorbs what you just heard",
+        "After a lesson ends before your attention does",
+        "When your notes stop making sense outside the room they were written in",
+        "Before the next voice replaces the last one",
+        "After stepping from a lit room into a duller one",
+        "When what you learned starts to lose its edges",
+        "Before you decide whether it mattered",
+        "After the seat you left is taken by someone else's absence",
+        "When the corridor holds more people than the room did",
+        "Before the lesson becomes something you merely attended",
+    ],
+    'lunch': [
+        "Before the first bite changes your posture",
+        "When a tray is set down without ceremony",
+        "After noticing who chose to sit alone",
+        "Before deciding this meal is different from the last",
+        "When conversation and chewing compete for the same breath",
+        "After the food arrives later than the hunger did",
+        "Before the break feels earned",
+        "When the room briefly agrees on nothing but eating",
+        "After swallowing before finishing a thought",
+        "Before the second half of the day is allowed to begin",
+        "When someone finishes eating before you start",
+    ],
+    'afternoon_break': [
+        "When the afternoon starts to feel long",
+        "Before the next obligation reintroduces itself",
+        "After a pause no one scheduled",
+        "When the light outside changes without your noticing when",
+        "Before boredom becomes something to justify",
+        "After checking something you already knew",
+        "When the day's second half asks less of you than the first",
+        "Before the break ends on someone else's schedule",
+        "After realizing how little of the day is left to explain",
+        "When the room grows quieter than it should this early",
+    ],
+    'dismissed': [
+        "When the day releases you before you're ready to be released",
+        "After the last obligation closes behind you",
+        "Before deciding what the evening owes you",
+        "When your pace changes without your permission",
+        "After stepping outside into air that wasn't yours all day",
+        "Before the version of you that performed today fully leaves",
+        "When freedom arrives with no instructions attached",
+        "After the building empties faster than the mind does",
+        "Before choosing which version of tonight to become",
+        "When the day's requirements end but the habits don't",
+    ],
+    'night': [
+        "When the day finally admits it's over",
+        "Before the dark finishes arriving",
+        "After the last necessary thing is done",
+        "When the quiet stops needing an explanation",
+        "Before tomorrow starts pretending to be far away",
+        "After the lights of the day are replaced by fewer, dimmer ones",
+        "When the version of you built for daylight steps aside",
+        "Before sleep is close enough to bargain with",
+        "After the last message of the day goes unanswered by choice",
+        "When the night asks for nothing, which is its own kind of demand",
+    ],
+}
+
 all_first_actions = actions_1 + environmental_actions + social_actions + speech_actions + internal_actions + observational_actions + temporal_actions + perceptual_actions + relational_actions # This combines all the first actions into one list for easier random selection
-def generate_prescript(): # This function generates a new prescript by randomly selecting a trigger, two actions, and an optional extra layer, while ensuring that the same prescript is not repeated too frequently.
+def generate_prescript(context=None): # This function generates a new prescript by randomly selecting a trigger, two actions, and an optional extra layer, while ensuring that the same prescript is not repeated too frequently.
+    # `context` optionally picks a themed trigger pool (see context_triggers above) instead of
+    # the default all-purpose one — everything else about generation is unchanged.
     global recent_prescripts
+
+    trigger_pool = context_triggers.get(context, triggers)
 
     if random.random() < 0.12:
         text = random.choice(manual_rare)
     else:
         while True:
-            trigger = random.choice(triggers)
+            trigger = random.choice(trigger_pool)
             first = random.choice(all_first_actions)
             second = random.choice(actions_2)
 
