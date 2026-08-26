@@ -1,4 +1,22 @@
 
+function getCookie(name) {                 // Reads a cookie value by name (used to grab Django's csrftoken cookie so
+    const value = `; ${document.cookie}`;  // POST requests can carry it in the X-CSRFToken header, as required now
+    const parts = value.split(`; ${name}=`); // that CsrfViewMiddleware is enabled).
+    if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
+    return "";
+}
+
+function postForm(url, bodyString) {   // Wrapper around fetch() for POST requests that attaches the CSRF token
+    return fetch(url, {                // header Django requires for unsafe (state-changing) methods.
+        method: "POST",
+        headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-CSRFToken": getCookie("csrftoken"),
+        },
+        body: bodyString
+    });
+}
+
 function animateStatus(message) {                       // This function creates a "decode-style" animation effect for the status message, where random characters are rapidly replaced
     const statusEl = document.getElementById("status"); // by the actual message characters over a short duration. It also plays a sound effect to enhance the experience.
 
@@ -170,26 +188,14 @@ function setStoredPrescript(text) {                        // This function stor
     localStorage.setItem("prescript_text", text);          // This allows the application to remember the last prescript across sessions and display it when the user returns to the page.
 }
 
-function funcUpdateScore(score) { // This function sends a POST request to the server to update the user's grace score. It retrieves the stored username and includes it in the request body along with the new score. 
+function funcUpdateScore(score) { // This function sends a POST request to the server to update the user's grace score. It retrieves the stored username and includes it in the request body along with the new score.
     const name = getStoredName(); // This allows the server to associate the updated score with the correct user profile.
-    fetch("/update_score/", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: `username=${encodeURIComponent(name)}&score=${encodeURIComponent(score)}`
-    })
+    postForm("/update_score/", `username=${encodeURIComponent(name)}&score=${encodeURIComponent(score)}`);
 }
 
-function setStoredName(name) {                          // This function stores the username in localStorage and sends a POST request to the server to update the user's name in their profile. It takes a name parameter, 
-    localStorage.setItem("prescript_username", name);   // saves it in localStorage under the "prescript_username" key, and then makes a request to the "/update/" endpoint with the new username. After updating, it 
-    fetch("/update/", {                                 // calls updateNameUI() to refresh any UI elements that display the user's name.
-        method: "POST",
-        headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: `username=${encodeURIComponent(name)}`
-    });
+function setStoredName(name) {                          // This function stores the username in localStorage and sends a POST request to the server to update the user's name in their profile. It takes a name parameter,
+    localStorage.setItem("prescript_username", name);   // saves it in localStorage under the "prescript_username" key, and then makes a request to the "/update/" endpoint with the new username. After updating, it
+    postForm("/update/", `username=${encodeURIComponent(name)}`); // calls updateNameUI() to refresh any UI elements that display the user's name.
     updateNameUI();
 }
 
@@ -348,16 +354,42 @@ function updateRoleUI(score) {                  // This function updates the UI 
     }
 }
 
-function initPage() {                     // This function initializes the page by fetching the user's current grace score and prescript from the server, updating the UI accordingly, and setting up event listeners for user 
+function loadHistory() {                     // Fetches this user's persisted history from the server and renders it into #history.
+    const historyEl = document.getElementById("history");
+    if (!historyEl) return;
+
+    const name = getStoredName().trim();
+    postForm("/get_history/", `username=${encodeURIComponent(name)}`)
+        .then(response => response.json())
+        .then(data => {
+            const items = data.history || [];
+            historyEl.innerHTML = "";
+
+            if (!name || items.length === 0) {
+                const empty = document.createElement("div");
+                empty.className = "history-empty";
+                empty.textContent = name
+                    ? "No history yet — complete or ignore a prescript to start tracking it."
+                    : "No history yet — save a name from the menu to start tracking it.";
+                historyEl.appendChild(empty);
+                return;
+            }
+
+            items.forEach(item => {
+                const div = document.createElement("div");
+                div.className = "history-item";
+                const label = item.action === "completed" ? "Completed" : "Ignored";
+                div.textContent = `${label} — ${item.text}`;
+                historyEl.appendChild(div);
+            });
+        });
+}
+
+function initPage() {                     // This function initializes the page by fetching the user's current grace score and prescript from the server, updating the UI accordingly, and setting up event listeners for user
     const name = getStoredName().trim();  // interactions. It ensures that the user's name and prescript are displayed consistently across sessions by retrieving them from localStorage and updating the UI elements on page load.
 
-    fetch("/get_score/", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: `username=${encodeURIComponent(name)}`
-    }).then(response => response.json())
+    postForm("/get_score/", `username=${encodeURIComponent(name)}`)
+        .then(response => response.json())
         .then(data => {
             const scoreValue = Number(data.score);
             const homeGraceEl = document.getElementById("grace");
@@ -378,6 +410,7 @@ function initPage() {                     // This function initializes the page 
         });
     // Keep name displayed consistently across pages.
     updateNameUI();
+    loadHistory();
 
     // const input = document.getElementById("usernameInput");
     // if (input) {

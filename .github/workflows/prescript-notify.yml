@@ -1,0 +1,23 @@
+name: Send prescript notifications
+
+# All cron times below are UTC. Local schedule (UTC+7): 07:00, 09:50, 11:30, 14:10, 16:00, 20:00.
+# GitHub's scheduler isn't minute-precise under load — expect a few minutes of drift.
+on:
+  schedule:
+    - cron: "0 0 * * *"   # 07:00 UTC+7
+    - cron: "50 2 * * *"  # 09:50 UTC+7
+    - cron: "30 4 * * *"  # 11:30 UTC+7
+    - cron: "10 7 * * *"  # 14:10 UTC+7
+    - cron: "0 9 * * *"   # 16:00 UTC+7
+    - cron: "0 13 * * *"  # 20:00 UTC+7
+  workflow_dispatch: {}   # lets you fire a test notification manually from the Actions tab
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger prescript notification
+        run: |
+          curl -sS --fail --max-time 60 \
+            -H "X-Notify-Secret: ${{ secrets.NOTIFY_TRIGGER_SECRET }}" \
+            "${{ secrets.RENDER_APP_URL }}/notify/trigger/"

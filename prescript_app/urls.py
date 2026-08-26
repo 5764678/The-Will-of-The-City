@@ -13,4 +13,6 @@ urlpatterns = [
     path('update/', views.update),
     path('update_score/', views.update_score),
     path('get_score/', views.get_score),
+    path('get_history/', views.get_history),
+    path('notify/trigger/', views.notify_trigger),
 ]
