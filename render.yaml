@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: will-of-the-city
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate"
+    startCommand: "gunicorn prescript_project.wsgi"
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      # Phone push notifications (see .github/workflows/prescript-notify.yml) — set these
+      # manually in the Render dashboard, they're not auto-generated.
+      - key: NTFY_TOPIC
+        sync: false
+      - key: NOTIFY_USERNAME
+        sync: false
+      - key: NOTIFY_TRIGGER_SECRET
+        sync: false
