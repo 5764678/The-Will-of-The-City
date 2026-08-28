@@ -1,9 +1,27 @@
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+html {
+    /* Prevents a single too-wide element (long unbroken text, an image, etc.) from ever
+       producing horizontal scroll/overflow on narrow phone screens. */
+    overflow-x: hidden;
+    max-width: 100%;
+}
+
 body {
     background-color: black;
     color: #86bada;
     font-family: 'Share Tech Mono', monospace;
     text-align: center;
     margin: 120px 0 0 0;
+    overflow-x: hidden;
+    max-width: 100%;
+    /* Side padding keeps content off the very edge of the screen and respects the iPhone's
+       rounded corners / notch cutouts in landscape (env() is 0 on devices without a notch). */
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-bottom: env(safe-area-inset-bottom);
 }
 
 body.menu-page {
@@ -21,10 +39,16 @@ body.menu-page .menu {
 }
 
 #prescript {
-    font-size: 28px;
-    margin-bottom: 40px;
+    /* clamp() shrinks the text on narrow phone screens instead of just wrapping to more lines,
+       which is what was pushing the Complete/Ignore buttons down into overlap on iOS. */
+    font-size: clamp(18px, 5.5vw, 28px);
+    margin: 0 auto 40px auto;
     min-height: 50px;
+    max-width: 480px;
     letter-spacing: 2px;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    padding: 0 8px;
 }
 
 button {
@@ -40,6 +64,24 @@ button {
 button:hover {
     background-color: #86bada;
     color: black;
+}
+
+#completeBtn,
+#ignoreBtn {
+    /* Lets the two buttons wrap onto their own line on a narrow phone instead of forcing the
+       page wider than the viewport (they're plain inline-block buttons, so without this a long
+       tap target could get clipped at the screen edge rather than wrapping cleanly). */
+    max-width: calc(50vw - 24px);
+    white-space: normal;
+}
+
+@media (max-width: 400px) {
+    #completeBtn,
+    #ignoreBtn {
+        padding: 10px 14px;
+        font-size: 15px;
+        margin: 6px;
+    }
 }
 
 .menu-toggle {
@@ -145,6 +187,46 @@ button:hover {
 }
 
 
+.notify-banner {
+    width: 100%;
+    max-width: 300px;
+    box-sizing: border-box;
+    padding: 12px 14px;
+    border: 1px solid #86bada9a;
+    border-radius: 8px;
+    background: rgba(89, 145, 219, 0.1);
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
+.notify-controls {
+    width: 100%;
+    max-width: 300px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.notify-controls button {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+}
+
+.notify-controls button:disabled {
+    opacity: 0.6;
+    cursor: default;
+    background-color: black;
+    color: #86bada;
+}
+
+.notify-status {
+    font-size: 0.8rem;
+    opacity: 0.75;
+    min-height: 1em;
+}
+
 .menu-right {
     flex: 1;
     display: flex;
@@ -224,6 +306,13 @@ button:hover {
     margin: 0 auto 30px auto;
     width: min(240px, 60vw);
     max-width: 320px;
+    height: auto;
+}
+
+.home-logo {
+    display: block;
+    margin: 30px auto 0 auto;
+    width: min(363px, 80vw);
     height: auto;
 }
 

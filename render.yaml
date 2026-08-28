@@ -12,9 +12,20 @@ services:
         value: 3.12.7
       # Phone push notifications (see .github/workflows/prescript-notify.yml) — set these
       # manually in the Render dashboard, they're not auto-generated.
-      - key: NTFY_TOPIC
-        sync: false
       - key: NOTIFY_USERNAME
         sync: false
       - key: NOTIFY_TRIGGER_SECRET
+        sync: false
+      # Web Push (primary delivery path — see prescript_app/notify.py). Generate a VAPID keypair
+      # yourself (README has the command) and set these manually; never auto-generate them here,
+      # a new keypair invalidates every browser's existing push subscription.
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_CLAIMS_EMAIL
+        sync: false
+      # ntfy.sh fallback (used only if a user has no Web Push subscription yet, or a push attempt
+      # fails outright) — optional, set manually if you still want it.
+      - key: NTFY_TOPIC
         sync: false

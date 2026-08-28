@@ -1,16 +1,28 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Role</title>
     <link rel="stylesheet" href="/static/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+    <link rel="manifest" href="/static/manifest.webmanifest">
+    <meta name="theme-color" content="#000000">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
+    <link rel="shortcut icon" href="/static/icons/favicon.ico">
+    <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Will of the City">
 </head>
 <body>
 
     <a href="/menu/" class="menu-toggle" aria-label="Open menu">☰</a>
     <a href="/home/" class="return-button" aria-label="Return to Prescript’s">←</a>
 
-    <img src="/static/index_logo.webp" class="page-logo" alt="Logo">
+    <img src="/static/detailed_index_logo.webp" class="page-logo" alt="Logo">
 
     <main class="role-page">
         <header class="role-header">
@@ -36,7 +48,7 @@
                 <div class="role-card__title">Turncoat</div>
                 <div class="role-card__info">-1 and below. Renegade from the City’s rhythm.</div>
                 <div class="role-card__lock">
-                    <img src="/static/index_logo.webp" alt="Locked" class="role-card__lock-icon"/>
+                    <img src="/static/detailed_index_logo.webp" alt="Locked" class="role-card__lock-icon"/>
                     <div class="role-card__lock-label">Unlocked</div>
                 </div>
             </div>
@@ -46,7 +58,7 @@
                 <div class="role-card__title">Civilian</div>
                 <div class="role-card__info">0–50. The base level; your motion is still forming.</div>
                 <div class="role-card__lock">
-                    <img src="/static/index_logo.webp" alt="Unlocked" class="role-card__lock-icon"/>
+                    <img src="/static/detailed_index_logo.webp" alt="Unlocked" class="role-card__lock-icon"/>
                     <div class="role-card__lock-label">Unlocked</div>
                 </div>
             </div>
@@ -56,7 +68,7 @@
                 <div class="role-card__title">Proselyte</div>
                 <div class="role-card__info">51–125. You are hearing the City’s cadence.</div>
                 <div class="role-card__lock">
-                    <img src="/static/index_logo.webp" alt="Locked" class="role-card__lock-icon" />
+                    <img src="/static/detailed_index_logo.webp" alt="Locked" class="role-card__lock-icon" />
                     <div class="role-card__lock-label">Locked</div>
                 </div>
             </div>
@@ -66,7 +78,7 @@
                 <div class="role-card__title">Proxy</div>
                 <div class="role-card__info">126–200. You are a node, routing motion onward.</div>
                 <div class="role-card__lock">
-                    <img src="/static/index_logo.webp" alt="Locked" class="role-card__lock-icon" />
+                    <img src="/static/detailed_index_logo.webp" alt="Locked" class="role-card__lock-icon" />
                     <div class="role-card__lock-label">Locked</div>
                 </div>
             </div>
@@ -76,7 +88,7 @@
                 <div class="role-card__title">Messenger</div>
                 <div class="role-card__info">126–200. You are the conduit between points.</div>
                 <div class="role-card__lock">
-                    <img src="/static/index_logo.webp" alt="Locked" class="role-card__lock-icon"/>
+                    <img src="/static/detailed_index_logo.webp" alt="Locked" class="role-card__lock-icon"/>
                     <div class="role-card__lock-label">Locked</div>
                 </div>
             </div>
@@ -86,7 +98,7 @@
                 <div class="role-card__title">Weaver</div>
                 <div class="role-card__info">201+. You shape the City’s pattern.</div>
                 <div class="role-card__lock">
-                    <img src="/static/index_logo.webp" alt="Locked" class="role-card__lock-icon" />
+                    <img src="/static/detailed_index_logo.webp" alt="Locked" class="role-card__lock-icon" />
                     <div class="role-card__lock-label">Locked</div>
                 </div>
             </div>
@@ -94,5 +106,6 @@
     </main>
 
     <script src="/static/script.js"></script>
+    <script src="/static/pwa.js"></script>
 </body>
 </html>

@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 staticfiles/
 .env
+vapid_keys_DO_NOT_COMMIT/

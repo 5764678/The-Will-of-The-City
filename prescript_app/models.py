@@ -31,6 +31,21 @@ class PrescriptHistory(models.Model):  # Persists each completed/ignored prescri
         return f"{self.user.name}: {self.action} — {self.text[:40]}"
 
 
+class PushSubscription(models.Model):  # A browser's Web Push subscription (from PushManager.subscribe()), tied to a
+    # username the same way PendingNotification is. One row per browser/device that's granted notification
+    # permission — a user with the PWA installed on two phones gets two rows, and both get pushed to.
+    username = models.CharField(max_length=150, db_index=True)
+    endpoint = models.TextField(unique=True)  # uniquely identifies the browser+device+origin; re-subscribing
+    # the same device just updates the existing row (see push_subscribe) rather than creating a duplicate.
+    p256dh = models.TextField()  # subscription's public key, used by the server to encrypt the push payload
+    auth = models.TextField()    # subscription's auth secret, required alongside p256dh to encrypt the payload
+    user_agent = models.CharField(max_length=255, blank=True)  # for humans skimming /admin/, not used by code
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.username}: {self.endpoint[:60]}"
+
+
 class PendingNotification(models.Model):  # Tracks a scheduled push notification's prescript from the moment it's
     # sent until it's either tapped (Complete/Ignore) or times out unanswered. Lets notify_trigger auto-file an
     # unanswered one as ignored the next time it runs, instead of it just silently going nowhere.

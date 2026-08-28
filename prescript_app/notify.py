@@ -1,17 +1,102 @@
-"""Pushes prescripts and outcome confirmations to your phone via ntfy.sh (https://ntfy.sh).
+"""Pushes prescripts and outcome confirmations to your phone.
 
-ntfy.sh needs no account: install the app, subscribe to a private topic name (your "secret"),
-and anything POSTed to https://ntfy.sh/<topic> shows up as a push notification.
+Two delivery paths live here side by side:
+
+- Web Push (send_webpush*) — the primary path. Goes straight to the browser that's subscribed
+  (see PushSubscription / push_subscribe in views.py), which on iOS means the site installed to
+  the Home Screen as a PWA. No third-party service involved once VAPID keys are configured.
+- ntfy.sh (send_ntfy*) — the original path, kept as a fallback for whenever a target username
+  has no push subscription on file (hasn't installed/enabled notifications yet), or every send
+  attempt to their subscriptions failed. ntfy.sh needs no account: install the app, subscribe to
+  a private topic name (your "secret"), and anything POSTed to https://ntfy.sh/<topic> shows up
+  as a push notification.
+
+Callers (views.py) decide which path to use per-message — see _maybe_notify / notify_trigger.
 """
+import json
+import os
 import random
 import time
 import urllib.request
 
-# Public URL of an icon ntfy will fetch and display next to the notification. Points at the
-# deployed site's own static file — ntfy needs a real reachable URL, not a local path, so this
-# has to be the live Render URL rather than localhost (which is why it's not configurable via
-# NOTIFY_TRIGGER's request.build_absolute_uri — that'd break for local/dev runs of this command).
-NOTIFICATION_ICON_URL = "https://will-of-the-city.onrender.com/static/notify_icon.png"
+from pywebpush import webpush, WebPushException
+
+# VAPID identifies this server to the browsers' push services (Google/Mozilla/Apple's push
+# endpoints) so they can rate-limit and contact the operator about abuse — it's required by the
+# Web Push spec, not optional. All three come from the environment, never hardcoded: generate a
+# keypair once (see README) and set these on the host. VAPID_CLAIMS_EMAIL is only ever sent to
+# the browser vendor's push service as the "sub" contact claim — never anywhere else.
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY')
+VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY')
+VAPID_CLAIMS_EMAIL = os.environ.get('VAPID_CLAIMS_EMAIL')
+
+# The detailed Index logo (same image used as the app/manifest icon — see icon-192.png in
+# generate_icons.py) — shown as the small icon on the notification itself once it lands. Shared
+# with NOTIFICATION_ICON_URL below so ntfy and Web Push notifications, and the installed app icon,
+# all show the same image.
+WEBPUSH_ICON_URL = "https://will-of-the-city.onrender.com/static/icons/icon-192.png"
+
+
+class WebPushGone(Exception):
+    """Raised when a subscription is confirmed dead (browser returned 404/410 — uninstalled,
+    permission revoked, or otherwise expired). Callers should delete the PushSubscription row;
+    anything else raised from send_webpush is a transient failure and the row should be kept."""
+
+
+def send_webpush(subscription, title, body, *, icon=None, tag=None, urgent=False,
+                  url=None, complete_url=None, ignore_url=None, timeout=15):
+    """Sends one Web Push notification to a single PushSubscription (or subscription-info dict).
+
+    Raises WebPushGone if the subscription is confirmed dead (caller should delete it), or
+    re-raises WebPushException for any other failure (caller decides whether to fall back).
+    """
+    if not (VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY):
+        raise RuntimeError("VAPID_PRIVATE_KEY/VAPID_PUBLIC_KEY are not configured")
+
+    subscription_info = subscription if isinstance(subscription, dict) else {
+        "endpoint": subscription.endpoint,
+        "keys": {"p256dh": subscription.p256dh, "auth": subscription.auth},
+    }
+
+    payload = {
+        "title": title,
+        "body": body,
+        "icon": icon or WEBPUSH_ICON_URL,
+        "badge": icon or WEBPUSH_ICON_URL,
+        "tag": tag,
+        "url": url or "/home/",
+    }
+    actions = []
+    if complete_url:
+        actions.append({"action": "complete", "title": "Complete", "url": complete_url})
+    if ignore_url:
+        actions.append({"action": "ignore", "title": "Ignore", "url": ignore_url})
+    if actions:
+        payload["actions"] = actions
+
+    vapid_claims = {"sub": f"mailto:{VAPID_CLAIMS_EMAIL}"} if VAPID_CLAIMS_EMAIL else {}
+
+    try:
+        webpush(
+            subscription_info=subscription_info,
+            data=json.dumps(payload),
+            vapid_private_key=VAPID_PRIVATE_KEY,
+            vapid_claims=vapid_claims,
+            ttl=int(timeout) * 60,
+            headers={"Urgency": "high" if urgent else "normal"},
+        )
+    except WebPushException as exc:
+        status = getattr(exc.response, "status_code", None)
+        if status in (404, 410):
+            raise WebPushGone(str(exc)) from exc
+        raise
+
+# Public URL of an icon ntfy will fetch and display next to the notification — the same detailed
+# Index logo used everywhere else (see WEBPUSH_ICON_URL above). ntfy needs a real reachable URL,
+# not a local path, so this has to be the live Render URL rather than localhost (which is why
+# it's not configurable via NOTIFY_TRIGGER's request.build_absolute_uri — that'd break for
+# local/dev runs of this command).
+NOTIFICATION_ICON_URL = "https://will-of-the-city.onrender.com/static/icons/icon-192.png"
 
 # Rotated randomly so notifications don't all open the same way. Kept flat and indifferent —
 # not urgent or demanding — to match the cold, procedural voice used everywhere else in the
@@ -182,3 +267,35 @@ def send_ntfy_prescript(topic, text, complete_url=None, ignore_url=None, timeout
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.status
+
+
+def send_webpush_alarm_burst(subscription, count, timeout=15):
+    """Web Push counterpart of send_ntfy_alarm_burst — same escalating spam-burst behavior, one
+    subscription at a time (the caller loops over a username's subscriptions; see views.py)."""
+    count = max(1, min(count, 5))
+    for _ in range(count):
+        send_webpush(
+            subscription,
+            title=random.choice(IGNORE_STREAK_TITLES),
+            body=random.choice(IGNORE_STREAK_MESSAGES),
+            urgent=True,
+            tag=None,  # no tag: each burst message should show as its own notification, not collapse
+            timeout=timeout,
+        )
+        time.sleep(1)  # so they land as distinct beeps, not one bundled/collapsed notification
+
+
+def send_webpush_prescript(subscription, text, complete_url=None, ignore_url=None, timeout=15):
+    """Web Push counterpart of send_ntfy_prescript — same random title, same Complete/Ignore
+    tap-to-act actions (rendered as notification action buttons where the browser supports them;
+    where it doesn't, e.g. some iOS Safari versions, tapping the notification body still opens
+    the site with the same prescript on screen)."""
+    send_webpush(
+        subscription,
+        title=random.choice(NOTIFICATION_TITLES),
+        body=text,
+        tag="prescript",
+        complete_url=complete_url,
+        ignore_url=ignore_url,
+        timeout=timeout,
+    )

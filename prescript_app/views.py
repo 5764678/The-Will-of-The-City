@@ -1,22 +1,29 @@
 import datetime
+import json
 import os
 import random
 from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.core import signing
-from django.http import JsonResponse
+from django.http import HttpResponse, HttpResponseNotFound, JsonResponse
 from django.utils import timezone
-from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
+from django.views.decorators.http import require_POST
 from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView
 
-from prescript_app.models import UserProfile, PrescriptHistory, PendingNotification
+from prescript_app.models import UserProfile, PrescriptHistory, PendingNotification, PushSubscription
 from .prescripts import generate_prescript
 from . import grace as grace_module
+from . import notify as notify_module
 from .notify import (
     send_ntfy_alarm_burst,
     send_ntfy_message,
     send_ntfy_prescript,
+    send_webpush_alarm_burst,
+    send_webpush_prescript,
+    WebPushGone,
     COMPLETE_CONFIRMATIONS,
     IGNORE_CONFIRMATIONS,
     EXPIRED_MESSAGES,
@@ -109,14 +116,55 @@ def _resolve_current(request):
     return current['text'], current['reward'], current['punishment'], 'session', None
 
 
-def _maybe_notify(message):
-    """Best-effort push of a short outcome message — only if NTFY_TOPIC is configured. Never
-    raises: a notification hiccup shouldn't break scoring, which already happened by this point."""
+def _webpush_subscriptions_for(username):
+    if not username:
+        return []
+    return list(PushSubscription.objects.filter(username=username))
+
+
+def _send_webpush_to_all(username, send_one, *args, **kwargs):
+    """Calls send_one(subscription, *args, **kwargs) for every subscription this username has.
+
+    send_one is one of the send_webpush_* helpers in notify.py. A subscription that comes back
+    confirmed dead (WebPushGone — uninstalled, permission revoked) is deleted so it stops being
+    tried again; any other failure just leaves that one subscription's send unsuccessful.
+
+    Returns True if at least one subscription was actually reached, so the caller knows whether
+    it still needs to fall back to ntfy.
+    """
+    subs = _webpush_subscriptions_for(username)
+    sent_any = False
+    for sub in subs:
+        try:
+            send_one(sub, *args, **kwargs)
+            sent_any = True
+        except WebPushGone:
+            sub.delete()
+        except Exception:
+            pass
+    return sent_any
+
+
+def _maybe_notify(message, username=None, title=None):
+    """Best-effort push of a short outcome message.
+
+    Web Push is tried first (if `username` has any subscriptions on file). ntfy.sh is used as a
+    fallback — either because `username` has no subscription yet, or the push attempt(s) failed
+    outright — as long as NTFY_TOPIC is configured. Never raises: a notification hiccup shouldn't
+    break scoring, which already happened by this point.
+    """
+    if username:
+        try:
+            if _send_webpush_to_all(username, notify_module.send_webpush, title or "", message):
+                return
+        except Exception:
+            pass
+
     topic = os.environ.get('NTFY_TOPIC')
     if not topic:
         return
     try:
-        send_ntfy_message(topic, message)
+        send_ntfy_message(topic, message, title=title)
     except Exception:
         pass
 
@@ -208,7 +256,7 @@ def _current_ignore_streak(profile):
     return streak
 
 
-def _maybe_trigger_ignore_alarm(profile):
+def _maybe_trigger_ignore_alarm(profile, username=None):
     """Call right after recording an Ignore (explicit tap or auto-expired timeout — both count
     the same). Fires an escalating alarm burst once the streak crosses IGNORE_SPAM_THRESHOLD."""
     if not profile:
@@ -216,38 +264,48 @@ def _maybe_trigger_ignore_alarm(profile):
     streak = _current_ignore_streak(profile)
     if streak < IGNORE_SPAM_THRESHOLD:
         return
+    burst_size = streak - IGNORE_SPAM_THRESHOLD + 1
+
+    sent = False
+    if username:
+        try:
+            sent = _send_webpush_to_all(username, send_webpush_alarm_burst, burst_size)
+        except Exception:
+            sent = False
+
+    if sent:
+        return
     topic = os.environ.get('NTFY_TOPIC')
     if not topic:
         return
-    burst_size = streak - IGNORE_SPAM_THRESHOLD + 1
     try:
         send_ntfy_alarm_burst(topic, burst_size)
     except Exception:
         pass
 
 
-def _maybe_send_streak_resolution(profile):
+def _maybe_send_streak_resolution(profile, username=None):
     """Call right before recording a Complete — if there was an active bad streak going into
     it, send a one-off message acknowledging it broke. Reads history from *before* this
     Complete is recorded, so call this first."""
     if not profile:
         return
     if _current_ignore_streak(profile) >= IGNORE_SPAM_THRESHOLD:
-        _maybe_notify(random.choice(STREAK_RESOLUTION_MESSAGES))
+        _maybe_notify(random.choice(STREAK_RESOLUTION_MESSAGES), username=username)
 
 
 def complete(request): # This function handles the completion of a prescript task by the user. It updates the user's grace score based on the reward for completing the task, records the action in the history, and generates a new prescript for the next task. The function also manages user profiles and updates the database accordingly if a username is provided in the request. Finally, it returns a JsonResponse containing the new grace score, status, and the next prescript to be displayed to the user.
     current_text, current_reward, current_punishment, source, token = _resolve_current(request)
+    username = request.GET.get('username') or request.POST.get('username')
 
     if source == 'expired_token':
-        _maybe_notify(random.choice(EXPIRED_TAP_MESSAGES))
+        _maybe_notify(random.choice(EXPIRED_TAP_MESSAGES), username=username)
         return JsonResponse({'status': 'expired'}, status=410)
 
     if source == 'token' and not _claim_pending_or_reject(token):
-        _maybe_notify(random.choice(EXPIRED_TAP_MESSAGES))
+        _maybe_notify(random.choice(EXPIRED_TAP_MESSAGES), username=username)
         return JsonResponse({'status': 'already_handled'}, status=409)
 
-    username = request.GET.get('username') or request.POST.get('username')
     base_grace = grace_module.get_grace()
 
     profile = None
@@ -264,11 +322,11 @@ def complete(request): # This function handles the completion of a prescript tas
     else:
         grace_module.set_grace(new_grace)
 
-    _maybe_send_streak_resolution(profile)  # check before recording, so it sees the streak that's about to break
+    _maybe_send_streak_resolution(profile, username=username)  # check before recording, so it sees the streak that's about to break
     _record_history(username, current_text, PrescriptHistory.COMPLETED)
 
     if source == 'token':
-        _maybe_notify(random.choice(COMPLETE_CONFIRMATIONS))
+        _maybe_notify(random.choice(COMPLETE_CONFIRMATIONS), username=username)
 
     text, reward, punishment = generate_prescript()
     _set_current(request, text, reward, punishment)
@@ -282,16 +340,16 @@ def complete(request): # This function handles the completion of a prescript tas
 
 def ignore(request): # This function handles the case when a user chooses to ignore a prescript task. It updates the user's grace score based on the punishment for ignoring the task, records the action in the history, and generates a new prescript for the next task. Similar to the complete function, it manages user profiles and updates the database if a username is provided in the request. Finally, it returns a JsonResponse containing the new grace score, status, and the next prescript to be displayed to the user.
     current_text, current_reward, current_punishment, source, token = _resolve_current(request)
+    username = request.GET.get('username') or request.POST.get('username')
 
     if source == 'expired_token':
-        _maybe_notify(random.choice(EXPIRED_TAP_MESSAGES))
+        _maybe_notify(random.choice(EXPIRED_TAP_MESSAGES), username=username)
         return JsonResponse({'status': 'expired'}, status=410)
 
     if source == 'token' and not _claim_pending_or_reject(token):
-        _maybe_notify(random.choice(EXPIRED_TAP_MESSAGES))
+        _maybe_notify(random.choice(EXPIRED_TAP_MESSAGES), username=username)
         return JsonResponse({'status': 'already_handled'}, status=409)
 
-    username = request.GET.get('username') or request.POST.get('username')
     base_grace = grace_module.get_grace()
 
     profile = None
@@ -309,10 +367,10 @@ def ignore(request): # This function handles the case when a user chooses to ign
         grace_module.set_grace(new_grace)
 
     _record_history(username, current_text, PrescriptHistory.IGNORED)
-    _maybe_trigger_ignore_alarm(profile)
+    _maybe_trigger_ignore_alarm(profile, username=username)
 
     if source == 'token':
-        _maybe_notify(random.choice(IGNORE_CONFIRMATIONS))
+        _maybe_notify(random.choice(IGNORE_CONFIRMATIONS), username=username)
 
     text, reward, punishment = generate_prescript()
     _set_current(request, text, reward, punishment)
@@ -412,32 +470,43 @@ def _expire_stale_pending(username):
         pending.resolved = True
         pending.save()
 
-        _maybe_notify(random.choice(EXPIRED_MESSAGES))
-        _maybe_trigger_ignore_alarm(profile)
+        _maybe_notify(random.choice(EXPIRED_MESSAGES), username=username)
+        _maybe_trigger_ignore_alarm(profile, username=username)
 
 
 def notify_trigger(request):
-    """Generates a prescript and pushes it to your phone via ntfy.sh.
+    """Generates a prescript and pushes it to your phone.
 
     Meant to be called by an external scheduler (see .github/workflows/prescript-notify.yml)
     at fixed times of day, not by the browser — so it's authenticated with a shared secret
     header instead of CSRF/session, and works even while nobody has the site open.
 
+    Web Push (to whatever devices NOTIFY_USERNAME has enabled notifications on — see
+    push_subscribe) is tried first; ntfy.sh is the fallback, used only if NOTIFY_USERNAME has no
+    push subscription yet, or every push attempt failed. At least one of the two must be usable.
+
     Configure via environment variables on the host:
       NOTIFY_TRIGGER_SECRET  required — must match the X-Notify-Secret header the caller sends
-      NTFY_TOPIC             required — your ntfy.sh topic name (subscribe to it in the ntfy app)
-      NOTIFY_USERNAME        optional — username whose Grace the Complete/Ignore buttons affect,
-                              and who unanswered prescripts get auto-filed against
+      NOTIFY_USERNAME        required to reach anyone via Web Push — username whose subscriptions
+                              get pushed to, whose Grace the Complete/Ignore buttons affect, and
+                              who unanswered prescripts get auto-filed against
+      NTFY_TOPIC              optional — ntfy.sh fallback topic (subscribe to it in the ntfy app)
+      VAPID_PUBLIC_KEY/
+      VAPID_PRIVATE_KEY      required for Web Push — see README for how to generate a pair
     """
     secret = os.environ.get('NOTIFY_TRIGGER_SECRET')
     if not secret or request.headers.get('X-Notify-Secret') != secret:
         return JsonResponse({'status': 'forbidden'}, status=403)
 
-    topic = os.environ.get('NTFY_TOPIC')
-    if not topic:
-        return JsonResponse({'status': 'error', 'detail': 'NTFY_TOPIC is not configured'}, status=500)
-
     username = os.environ.get('NOTIFY_USERNAME', '')
+    topic = os.environ.get('NTFY_TOPIC')
+    has_push = bool(username and _webpush_subscriptions_for(username))
+
+    if not has_push and not topic:
+        return JsonResponse({
+            'status': 'error',
+            'detail': 'No delivery path configured: NOTIFY_USERNAME has no push subscription and NTFY_TOPIC is not set',
+        }, status=500)
 
     _expire_stale_pending(username)
 
@@ -455,9 +524,101 @@ def notify_trigger(request):
             username=username, text=text, reward=reward, punishment=punishment, token=token,
         )
 
-    try:
-        send_ntfy_prescript(topic, text, complete_url=complete_url, ignore_url=ignore_url)
-    except Exception as exc:
-        return JsonResponse({'status': 'error', 'detail': str(exc)}, status=502)
+    sent = False
+    if has_push:
+        try:
+            sent = _send_webpush_to_all(
+                username, send_webpush_prescript, text,
+                complete_url=complete_url, ignore_url=ignore_url,
+            )
+        except Exception:
+            sent = False
+
+    if not sent:
+        if not topic:
+            return JsonResponse({'status': 'error', 'detail': 'Web Push failed and no NTFY_TOPIC fallback is configured'}, status=502)
+        try:
+            send_ntfy_prescript(topic, text, complete_url=complete_url, ignore_url=ignore_url)
+        except Exception as exc:
+            return JsonResponse({'status': 'error', 'detail': str(exc)}, status=502)
 
     return JsonResponse({'status': 'sent', 'prescript': text})
+
+
+def service_worker(request):
+    """Serves sw.js at the site root (/sw.js) rather than /static/sw.js — a service worker's
+    default max allowed scope is the directory it's served from, and this one needs to cover the
+    whole app ("/") so it can intercept navigations on every page and receive push events
+    regardless of which page (or none) is currently open."""
+    sw_path = os.path.join(settings.BASE_DIR, 'prescript_app', 'static', 'sw.js')
+    try:
+        with open(sw_path, 'rb') as f:
+            content = f.read()
+    except FileNotFoundError:
+        return HttpResponseNotFound()
+    response = HttpResponse(content, content_type='application/javascript')
+    response['Cache-Control'] = 'no-cache'  # so an updated sw.js is picked up promptly, not stuck behind a long-lived cache
+    return response
+
+
+def vapid_public_key(request):
+    """Returns the VAPID public key the client needs to pass to PushManager.subscribe()
+    (as applicationServerKey). Public by design — it's not a secret, only the private key is."""
+    key = notify_module.VAPID_PUBLIC_KEY
+    if not key:
+        return JsonResponse({'status': 'error', 'detail': 'VAPID_PUBLIC_KEY is not configured'}, status=500)
+    return JsonResponse({'status': 'success', 'publicKey': key})
+
+
+@csrf_exempt  # called with fetch() before a session/csrftoken cookie can be relied on in some
+              # PWA-install edge cases; the payload is just a public subscription + a username,
+              # nothing sensitive, and it can't act on anyone else's behalf (see PushSubscription).
+@require_POST
+def push_subscribe(request):
+    """Stores (or refreshes) a browser's Web Push subscription for `username`.
+
+    Called from pwa.js right after the user grants notification permission and
+    PushManager.subscribe() resolves. Body is JSON: {username, subscription: {endpoint, keys}}.
+    """
+    try:
+        data = json.loads(request.body or "{}")
+    except (ValueError, TypeError):
+        return JsonResponse({'status': 'error', 'detail': 'invalid JSON'}, status=400)
+
+    username = (data.get('username') or '').strip()
+    sub = data.get('subscription') or {}
+    endpoint = sub.get('endpoint')
+    keys = sub.get('keys') or {}
+    p256dh = keys.get('p256dh')
+    auth = keys.get('auth')
+
+    if not (username and endpoint and p256dh and auth):
+        return JsonResponse({'status': 'error', 'detail': 'username, endpoint and keys are required'}, status=400)
+
+    PushSubscription.objects.update_or_create(
+        endpoint=endpoint,
+        defaults={
+            'username': username,
+            'p256dh': p256dh,
+            'auth': auth,
+            'user_agent': request.META.get('HTTP_USER_AGENT', '')[:255],
+        },
+    )
+    return JsonResponse({'status': 'success'})
+
+
+@csrf_exempt  # see push_subscribe
+@require_POST
+def push_unsubscribe(request):
+    """Removes a browser's Web Push subscription — called from pwa.js when the user turns
+    notifications back off, and by the service worker's `pushsubscriptionchange` handler when
+    the browser itself invalidates the subscription. Body is JSON: {endpoint}."""
+    try:
+        data = json.loads(request.body or "{}")
+    except (ValueError, TypeError):
+        return JsonResponse({'status': 'error', 'detail': 'invalid JSON'}, status=400)
+
+    endpoint = data.get('endpoint')
+    if endpoint:
+        PushSubscription.objects.filter(endpoint=endpoint).delete()
+    return JsonResponse({'status': 'success'})
