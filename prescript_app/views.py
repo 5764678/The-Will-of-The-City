@@ -188,18 +188,15 @@ def _claim_pending_or_reject(token):
 
 
 @method_decorator(ensure_csrf_cookie, name='dispatch')
-class home(TemplateView): # This class defines the view for the home page of the application, which displays the current prescript and the user's grace score. It inherits from TemplateView and specifies 'index.html' as the template to render. The get_context_data method is overridden to generate a new prescript, update the current reward and punishment values, and include the prescript text and grace score in the context passed to the template for rendering.
+class home(TemplateView): # This class defines the view for the home page — an inbox of pending prescripts (see get_inbox/request_prescript) rather than
+    # a single current one. The page itself just renders the shell; script.js's loadInbox() populates #inbox client-side, scoped to the saved username,
+    # the same way get_history/get_score already work. get_context_data only needs to supply the anonymous/global grace fallback for the initial paint —
+    # script.js immediately overwrites it once it knows the real username (see initPage).
     template_name = 'index.html'
 
-    def get_context_data(self, **kwargs): # This method is responsible for preparing the context data that will be passed to the template when rendering the home page. It generates a new prescript using the generate_prescript function, stores it in the session, and adds it along with the current grace score to the context used in the template.
+    def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-
-        text, reward, punishment = generate_prescript()
-        _set_current(self.request, text, reward, punishment)
-
-        context['prescript'] = text
         context['grace'] = grace_module.get_grace()
-
         return context
 
 
@@ -444,6 +441,47 @@ def get_history(request): # Returns this username's persisted prescript history 
     return JsonResponse({
         'status': 'success',
         'history': items,
+    })
+
+
+def get_inbox(request): # Returns this username's still-unresolved prescripts (see PendingNotification) newest first — the home page's inbox list.
+    # Covers both scheduled pushes (notify_trigger) and self-requested ones (request_prescript) — both create the same kind of row, so they show up
+    # side by side. Polled periodically by script.js (loadInbox) so a scheduled push that arrives while the page is open appears without a reload.
+    username = request.GET.get('username') or request.POST.get('username')
+    items = []
+    if username:
+        rows = PendingNotification.objects.filter(username=username, resolved=False).order_by('-sent_at')[:50]
+        items = [
+            {'token': r.token, 'text': r.text, 'sent_at': r.sent_at.isoformat()}
+            for r in rows
+        ]
+
+    return JsonResponse({
+        'status': 'success',
+        'inbox': items,
+    })
+
+
+def request_prescript(request): # Generates a prescript on demand (the inbox's "Request Prescript" button) instead of waiting for the next scheduled
+    # push. Creates the same kind of PendingNotification row notify_trigger does — same signed token, same 40-minute time limit, same auto-expiry sweep
+    # — so it's indistinguishable from a scheduled one once it's in the inbox. No push is sent; the caller is already looking at the page.
+    if request.method != "POST":
+        return JsonResponse({'status': 'error', 'detail': 'POST required'}, status=405)
+
+    username = (request.POST.get('username') or '').strip()
+    if not username:
+        return JsonResponse({'status': 'error', 'detail': 'username is required'}, status=400)
+
+    text, reward, punishment = generate_prescript()
+    token = signing.dumps({'text': text, 'reward': reward, 'punishment': punishment})
+
+    pending = PendingNotification.objects.create(
+        username=username, text=text, reward=reward, punishment=punishment, token=token,
+    )
+
+    return JsonResponse({
+        'status': 'success',
+        'item': {'token': pending.token, 'text': pending.text, 'sent_at': pending.sent_at.isoformat()},
     })
 
 

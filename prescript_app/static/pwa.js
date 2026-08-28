@@ -34,9 +34,17 @@ async function registerServiceWorker() {
     }
 }
 
-function handleSWMessage(event) {   // Handles pushsubscriptionchange forwarded from sw.js (see there) — the
-    if (event.data && event.data.type === "resubscribe") {  // service worker can't read localStorage for the
-        postSubscription(event.data.subscription);          // username itself, so it asks an open page to do it.
+function handleSWMessage(event) {   // Handles messages forwarded from sw.js.
+    if (!event.data) return;
+
+    if (event.data.type === "resubscribe") {          // pushsubscriptionchange — the service worker can't read
+        postSubscription(event.data.subscription);     // localStorage for the username, so it asks an open page to do it.
+    }
+
+    if (event.data.type === "new-prescript") {         // A push just arrived — refresh the inbox immediately instead of
+        if (typeof loadInbox === "function") {         // waiting for its next poll (see loadInbox in script.js). Guarded
+            loadInbox();                               // since pwa.js loads on every page, not just the one with an inbox.
+        }
     }
 }
 

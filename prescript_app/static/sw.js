@@ -97,7 +97,15 @@ self.addEventListener("push", (event) => {
         options.actions = payload.actions.map((a) => ({ action: a.action, title: a.title }));
     }
 
-    event.waitUntil(self.registration.showNotification(payload.title || "PRESCRIPT ISSUED", options));
+    event.waitUntil(Promise.all([
+        self.registration.showNotification(payload.title || "PRESCRIPT ISSUED", options),
+        // If the app is already open (foreground or background tab), tell it a new prescript
+        // landed so the inbox can show it immediately instead of waiting for its next poll —
+        // see the "new-prescript" handler in script.js.
+        self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+            clients.forEach((client) => client.postMessage({ type: "new-prescript" }));
+        }),
+    ]));
 });
 
 self.addEventListener("notificationclick", (event) => {

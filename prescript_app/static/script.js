@@ -58,129 +58,197 @@ function animateStatus(message, statusClass) {          // This function creates
     }, 100);
 }
 
-function setActionButtonsDisabled(disabled) {  // Disables both buttons while a Complete/Ignore request is in flight, so a fast
-    const completeBtn = document.getElementById("completeBtn"); // double-click (or double-tap) can't fire a second request against the same
-    const ignoreBtn = document.getElementById("ignoreBtn");     // prescript before the first one's response has replaced it.
-    if (completeBtn) completeBtn.disabled = disabled;
-    if (ignoreBtn) ignoreBtn.disabled = disabled;
-}
+// ---- Inbox (home page) ----------------------------------------------------------------------
+// The home page shows every unresolved prescript as its own card (get_inbox), newest on top.
+// A card disappears the moment its own Complete/Ignore resolves — nothing here assumes there's
+// only one prescript at a time the way the old single-slot #prescript/completeBtn/ignoreBtn setup
+// did. shownInboxTokens tracks which tokens are already rendered so polling/live-push updates
+// only ever add what's actually new, never duplicate a card.
 
-function completePrescript() {         // This function is called when the user completes a prescript. It sends a request to the server to process the completion, updates the UI with the new
-    const username = getStoredName();  // grace score and prescript, and triggers the appropriate status animation based on whether the action was successful or not.
-    const url = username ? `/complete/?username=${encodeURIComponent(username)}` : "/complete/";
+const shownInboxTokens = new Set();
+const INBOX_POLL_MS = 20000; // catches a scheduled push arriving while the page is open even if
+                              // the service-worker "new-prescript" message (see pwa.js) is missed
 
-    setActionButtonsDisabled(true);
-    fetch(url)
-        .then(response => response.json())
-        .then(data => {
-            const graceEl = document.getElementById("grace");
-            if (graceEl) {
-                graceEl.innerText = "Grace: " + data.grace;
-            }
-            const roleScoreEl = document.getElementById("roleScore");
-            if (roleScoreEl) {
-                updateRoleUI(data.grace);
-            }
-            funcUpdateScore(data.grace);
-            setStoredPrescript(data.prescript);
-            const prescriptEl = document.getElementById("prescript");
-            if (prescriptEl) {
-                prescriptEl.dataset.text = data.prescript;
-                prescriptEl.textContent = data.prescript;
-            }
-            decodeText(data.prescript);
-
-
-            if (data.status === "clear") {
-                animateStatus("Clear", "clear");
-            }
-
-            setTimeout(() => {
-                ;
-                // location.reload();
-            }, 2500);
-        })
-        .finally(() => setActionButtonsDisabled(false));
-}
-
-function ignorePrescript() {           // This function is called when the user chooses to ignore a prescript. It sends a request to the server to process the ignore action, updates the UI with the
-    const username = getStoredName();  // new grace score and prescript, and triggers a "Failed" status animation since ignoring is considered a failure in terms of grace.
-    const url = username ? `/ignore/?username=${encodeURIComponent(username)}` : "/ignore/";
-
-    setActionButtonsDisabled(true);
-    fetch(url)
-        .then(response => response.json())
-        .then(data => {
-            const graceEl = document.getElementById("grace");
-            if (graceEl) {
-                graceEl.innerText = "Grace: " + data.grace;
-            }
-            const roleScoreEl = document.getElementById("roleScore");
-            if (roleScoreEl) {
-                updateRoleUI(data.grace);
-            }
-            funcUpdateScore(data.grace);
-            setStoredPrescript(data.prescript);
-            const prescriptEl = document.getElementById("prescript");
-            if (prescriptEl) {
-                prescriptEl.dataset.text = data.prescript;
-                prescriptEl.textContent = data.prescript;
-            }
-            decodeText(data.prescript);
-
-            if (data.status === "failed") {
-                animateStatus("Failed", "failed");
-            }
-
-            setTimeout(() => {
-                ;
-            }, 2500);
-        })
-        .finally(() => setActionButtonsDisabled(false));
-}
-
-
-function decodeText(newText) { // This function creates a "decode-style" animation effect for the prescript text, where random characters are rapidly replaced by the actual message characters over a short 
-                               // duration. It also plays a sound effect to enhance the experience. The function takes an optional newText parameter, which allows it to be called with a specific text to decode, or it can fallback to using the existing data-text attribute of the prescript element.
-    const line = document.getElementById("prescript");
-
-    // Fallback to existing data-text (if provided) and guarantee immediate display.
-    const target = newText || (line && line.dataset && line.dataset.text) || "";
-    if (line) {
-        line.dataset.text = target;
-        line.textContent = target; // ensure initial text is visible instantly
-    }
+function decodeTextInto(el, newText) { // Generalized version of the old decodeText(): reveals `newText` into
+    if (!el) return;                   // an arbitrary element with the same "decode" character-scramble animation.
+    const target = newText || "";
+    el.dataset.text = target;
+    el.textContent = target; // ensure immediate readability even before the animation starts
 
     if (!target) return;
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*";
     let revealed = Array(target.length).fill(false);
 
     function decode() {
-        const beep = document.getElementById("beep");
         let output = "";
-
         for (let i = 0; i < target.length; i++) {
             if (revealed[i] || target[i] === " ") {
                 revealed[i] = true;
                 output += target[i];
             } else {
                 output += chars[Math.floor(Math.random() * chars.length)];
-
                 if (Math.random() < 0.08) {
                     revealed[i] = true;
                 }
             }
         }
 
-        line.textContent = output;
+        el.textContent = output;
         if (revealed.includes(false)) {
             setTimeout(decode, 30);
         } else {
-            line.textContent = target;
+            el.textContent = target;
         }
     }
 
     decode();
+}
+
+function resolveInboxItem(token, action, card) { // Tapping Complete/Ignore on one specific inbox card. Reuses the
+    const username = getStoredName().trim();     // existing token-based /complete//ignore/ endpoints (the same ones a
+    const base = action === "complete" ? "/complete/" : "/ignore/"; // notification's own action buttons hit) — so scoring,
+    const usernameQs = username ? `&username=${encodeURIComponent(username)}` : "";             // history, and the ignore-streak alarm all work identically
+    const url = `${base}?p=${encodeURIComponent(token)}${usernameQs}`;                          // whether the tap came from the phone or from here.
+
+    const buttons = card.querySelectorAll("button");
+    buttons.forEach(b => b.disabled = true);
+
+    fetch(url)
+        .then(response => response.json().then(data => ({ ok: response.ok, status: response.status, data })))
+        .then(({ status, data }) => {
+            if (typeof data.grace !== "undefined") {
+                const graceEl = document.getElementById("grace");
+                if (graceEl) graceEl.innerText = "Grace: " + data.grace;
+                const roleScoreEl = document.getElementById("roleScore");
+                if (roleScoreEl) updateRoleUI(data.grace);
+                funcUpdateScore(data.grace);
+            }
+
+            // 200 = just resolved here; 409/410 = someone/something else already resolved it
+            // (a notification tap, or the 40-minute auto-expiry sweep) — either way it's no
+            // longer pending, so the card comes off the list rather than sitting there dead.
+            if (status === 200) {
+                animateStatus(action === "complete" ? "Clear" : "Failed", action === "complete" ? "clear" : "failed");
+            }
+            removeInboxItem(token);
+        })
+        .catch(() => {
+            buttons.forEach(b => b.disabled = false); // network hiccup — leave the card so they can retry
+        });
+}
+
+function renderInboxCard(item) {
+    const card = document.createElement("div");
+    card.className = "inbox-item";
+    card.dataset.token = item.token;
+
+    const textEl = document.createElement("div");
+    textEl.className = "inbox-item__text";
+    card.appendChild(textEl);
+
+    const actions = document.createElement("div");
+    actions.className = "inbox-item__actions";
+
+    const completeBtn = document.createElement("button");
+    completeBtn.textContent = "Complete";
+    completeBtn.addEventListener("click", () => resolveInboxItem(item.token, "complete", card));
+
+    const ignoreBtn = document.createElement("button");
+    ignoreBtn.textContent = "Ignore";
+    ignoreBtn.addEventListener("click", () => resolveInboxItem(item.token, "ignore", card));
+
+    actions.appendChild(completeBtn);
+    actions.appendChild(ignoreBtn);
+    card.appendChild(actions);
+
+    return { card, textEl };
+}
+
+function updateInboxEmptyState() {
+    const inboxEl = document.getElementById("inbox");
+    if (!inboxEl) return;
+
+    const hasCards = inboxEl.querySelector(".inbox-item") !== null;
+    const existingEmpty = document.getElementById("inboxEmpty");
+
+    if (hasCards) {
+        if (existingEmpty) existingEmpty.remove();
+        return;
+    }
+    if (existingEmpty) return;
+
+    const name = getStoredName().trim();
+    const empty = document.createElement("div");
+    empty.id = "inboxEmpty";
+    empty.className = "inbox-empty";
+    empty.textContent = name
+        ? "Inbox is empty. Tap Request Prescript to receive one."
+        : "Save a name from the Menu to start receiving prescripts.";
+    inboxEl.appendChild(empty);
+}
+
+function prependInboxItem(item) { // Inserts one new card at the top ("stacks over" existing ones) and plays
+    if (shownInboxTokens.has(item.token)) return; // its decode-reveal animation. No-ops on a token already shown, so
+    const inboxEl = document.getElementById("inbox");                     // polling/live-push updates never create duplicate cards.
+    if (!inboxEl) return;
+
+    shownInboxTokens.add(item.token);
+    const { card, textEl } = renderInboxCard(item);
+    inboxEl.insertBefore(card, inboxEl.firstChild);
+    decodeTextInto(textEl, item.text);
+    updateInboxEmptyState();
+}
+
+function removeInboxItem(token) {
+    shownInboxTokens.delete(token);
+    const inboxEl = document.getElementById("inbox");
+    if (!inboxEl) return;
+    const card = Array.from(inboxEl.children).find(c => c.dataset.token === token);
+    if (card) card.remove();
+    updateInboxEmptyState();
+}
+
+function loadInbox() { // Fetches the current unresolved-prescript list and adds whatever isn't already shown —
+    const inboxEl = document.getElementById("inbox"); // called on page load, on a poll interval, on window focus, and
+    if (!inboxEl) return;                              // immediately when the service worker signals a push arrived (see pwa.js).
+
+    const name = getStoredName().trim();
+    if (!name) {
+        updateInboxEmptyState();
+        return;
+    }
+
+    postForm("/get_inbox/", `username=${encodeURIComponent(name)}`)
+        .then(response => response.json())
+        .then(data => {
+            const items = (data.inbox || []).filter(item => !shownInboxTokens.has(item.token));
+            // Server returns newest-first; reverse so prepending oldest-of-the-new-batch first
+            // leaves the actual newest item on top once all of them are inserted.
+            items.reverse().forEach(item => prependInboxItem(item));
+            if (items.length === 0) updateInboxEmptyState();
+        });
+}
+
+function requestPrescript() { // The inbox's "Request Prescript" button — generates one on demand instead of
+    const name = getStoredName().trim(); // waiting for the next scheduled push. See request_prescript in views.py.
+    if (!name) {
+        animateStatus("Save a name first");
+        return;
+    }
+
+    const btn = document.getElementById("requestPrescriptBtn");
+    if (btn) btn.disabled = true;
+
+    postForm("/request_prescript/", `username=${encodeURIComponent(name)}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === "success" && data.item) {
+                prependInboxItem(data.item);
+            }
+        })
+        .finally(() => {
+            if (btn) btn.disabled = false;
+        });
 }
 
 function playAudio() { // This function plays a beep sound effect. It resets the audio to the start and sets the volume before playing, allowing for repeated rapid calls without waiting for the sound to finish.
@@ -197,14 +265,6 @@ function playAudio() { // This function plays a beep sound effect. It resets the
 
 function getStoredName() {                                      // This function retrieves the stored username from localStorage. If no username is stored, it returns an empty string. This allows the 
     return localStorage.getItem("prescript_username") || "";    // application to remember the user's name across sessions and use it for personalized greetings and server interactions.
-}
-
-function getStoredPrescript() {                             // This function retrieves the stored prescript text from localStorage. If no prescript is stored, it returns an empty string. This allows 
-    return localStorage.getItem("prescript_text") || "";    // the application to remember the last prescript across sessions and display it when the user returns to the page.
-}
-
-function setStoredPrescript(text) {                        // This function stores the prescript text in localStorage. It takes a text parameter and sets it as the value for the "prescript_text" key.
-    localStorage.setItem("prescript_text", text);          // This allows the application to remember the last prescript across sessions and display it when the user returns to the page.
 }
 
 function funcUpdateScore(score) { // This function sends a POST request to the server to update the user's grace score. It retrieves the stored username and includes it in the request body along with the new score.
@@ -449,23 +509,12 @@ function initPage() {                     // This function initializes the page 
     }
 
 
-    const prescriptEl = document.getElementById("prescript");
-    const persistedPrescript = getStoredPrescript().trim();
-
-    if (prescriptEl) {
-        if (persistedPrescript) {
-            prescriptEl.dataset.text = persistedPrescript;
-            prescriptEl.textContent = persistedPrescript;
-            // Keep animation behavior on load if desired.
-            decodeText(persistedPrescript);
-        } else {
-            // initialize with server-provided text so it is not replaced immediately.
-            const initial = prescriptEl.dataset.text || "";
-            if (initial) {
-                setStoredPrescript(initial);
-                decodeText(initial);
-            }
-        }
+    if (document.getElementById("inbox")) {
+        loadInbox();
+        setInterval(loadInbox, INBOX_POLL_MS);
+        // Catches a permission/name change made in another tab, or just coming back to a
+        // backgrounded tab — cheap enough to just re-check every time the window regains focus.
+        window.addEventListener("focus", loadInbox);
     }
 }
 

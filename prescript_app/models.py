@@ -46,9 +46,11 @@ class PushSubscription(models.Model):  # A browser's Web Push subscription (from
         return f"{self.username}: {self.endpoint[:60]}"
 
 
-class PendingNotification(models.Model):  # Tracks a scheduled push notification's prescript from the moment it's
-    # sent until it's either tapped (Complete/Ignore) or times out unanswered. Lets notify_trigger auto-file an
-    # unanswered one as ignored the next time it runs, instead of it just silently going nowhere.
+class PendingNotification(models.Model):  # An inbox item: one prescript sitting unresolved, from the moment it's created (either
+    # a scheduled push from notify_trigger, or a self-requested one from request_prescript — both create the same kind of row) until
+    # it's either tapped (Complete/Ignore, on the phone notification or in the home page inbox — same /complete//ignore/ endpoints
+    # either way) or times out unanswered. Lets the next notify_trigger sweep auto-file an unanswered one as ignored instead of it
+    # just sitting there forever. get_inbox reads these (resolved=False) to populate the home page's inbox list.
     username = models.CharField(max_length=150)
     text = models.TextField()
     reward = models.IntegerField()

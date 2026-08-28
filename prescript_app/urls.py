@@ -14,6 +14,8 @@ urlpatterns = [
     path('update_score/', views.update_score),
     path('get_score/', views.get_score),
     path('get_history/', views.get_history),
+    path('get_inbox/', views.get_inbox),
+    path('request_prescript/', views.request_prescript),
     path('notify/trigger/', views.notify_trigger),
     path('sw.js', views.service_worker),
     path('push/vapid-public-key/', views.vapid_public_key),

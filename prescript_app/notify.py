@@ -37,6 +37,14 @@ VAPID_CLAIMS_EMAIL = os.environ.get('VAPID_CLAIMS_EMAIL')
 WEBPUSH_ICON_URL = "https://will-of-the-city.onrender.com/static/icons/icon-192.png"
 
 
+def _decorated_title(title):
+    """Wraps a notification header in the same '.-TEXT-.' decode-terminal framing used for the
+    in-page status line (see animateStatus in script.js) — visual consistency between the site
+    and what actually lands on your phone. Only applied to titles that already exist (prescript
+    arrivals, alarm bursts) — the deliberately title-less outcome confirmations stay title-less."""
+    return f".-{title}-."
+
+
 class WebPushGone(Exception):
     """Raised when a subscription is confirmed dead (browser returned 404/410 — uninstalled,
     permission revoked, or otherwise expired). Callers should delete the PushSubscription row;
@@ -219,7 +227,7 @@ def send_ntfy_alarm_burst(topic, count, timeout=15):
     count = max(1, min(count, 5))
     for _ in range(count):
         headers = {
-            "Title": random.choice(IGNORE_STREAK_TITLES),
+            "Title": _decorated_title(random.choice(IGNORE_STREAK_TITLES)),
             "Priority": "urgent",
         }
         if NOTIFICATION_ICON_URL:
@@ -242,7 +250,7 @@ def send_ntfy_prescript(topic, text, complete_url=None, ignore_url=None, timeout
     (ntfy's "Actions" header) so Complete/Ignore can be done straight from the notification,
     without opening the site.
     """
-    title = random.choice(NOTIFICATION_TITLES)
+    title = _decorated_title(random.choice(NOTIFICATION_TITLES))
 
     headers = {
         "Title": title,
@@ -276,7 +284,7 @@ def send_webpush_alarm_burst(subscription, count, timeout=15):
     for _ in range(count):
         send_webpush(
             subscription,
-            title=random.choice(IGNORE_STREAK_TITLES),
+            title=_decorated_title(random.choice(IGNORE_STREAK_TITLES)),
             body=random.choice(IGNORE_STREAK_MESSAGES),
             urgent=True,
             tag=None,  # no tag: each burst message should show as its own notification, not collapse
@@ -292,7 +300,7 @@ def send_webpush_prescript(subscription, text, complete_url=None, ignore_url=Non
     the site with the same prescript on screen)."""
     send_webpush(
         subscription,
-        title=random.choice(NOTIFICATION_TITLES),
+        title=_decorated_title(random.choice(NOTIFICATION_TITLES)),
         body=text,
         tag="prescript",
         complete_url=complete_url,
