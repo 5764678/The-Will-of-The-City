@@ -187,15 +187,16 @@ function updateInboxEmptyState() {
     inboxEl.appendChild(empty);
 }
 
-function prependInboxItem(item) { // Inserts one new card at the top ("stacks over" existing ones) and plays
-    if (shownInboxTokens.has(item.token)) return; // its decode-reveal animation. No-ops on a token already shown, so
-    const inboxEl = document.getElementById("inbox");                     // polling/live-push updates never create duplicate cards.
-    if (!inboxEl) return;
+function prependInboxItem(item, playSound = true) { // Inserts one new card at the top ("stacks over" existing ones),
+    if (shownInboxTokens.has(item.token)) return;   // plays its decode-reveal animation, and (unless suppressed — see
+    const inboxEl = document.getElementById("inbox"); // loadInbox's initial-load call) the same beep used for Clear/Failed,
+    if (!inboxEl) return;                              // so an arriving prescript is audible the same way an outcome is.
 
     shownInboxTokens.add(item.token);
     const { card, textEl } = renderInboxCard(item);
     inboxEl.insertBefore(card, inboxEl.firstChild);
     decodeTextInto(textEl, item.text);
+    if (playSound) playAudio();
     updateInboxEmptyState();
 }
 
@@ -207,6 +208,10 @@ function removeInboxItem(token) {
     if (card) card.remove();
     updateInboxEmptyState();
 }
+
+let inboxLoadedOnce = false; // Suppresses the arrival beep for the very first loadInbox() call, so opening the
+                              // page with several prescripts already pending doesn't fire a burst of beeps —
+                              // only prescripts that show up *after* that (poll/focus/live push) play the sound.
 
 function loadInbox() { // Fetches the current unresolved-prescript list and adds whatever isn't already shown —
     const inboxEl = document.getElementById("inbox"); // called on page load, on a poll interval, on window focus, and
@@ -222,10 +227,12 @@ function loadInbox() { // Fetches the current unresolved-prescript list and adds
         .then(response => response.json())
         .then(data => {
             const items = (data.inbox || []).filter(item => !shownInboxTokens.has(item.token));
+            const playSound = inboxLoadedOnce;
             // Server returns newest-first; reverse so prepending oldest-of-the-new-batch first
             // leaves the actual newest item on top once all of them are inserted.
-            items.reverse().forEach(item => prependInboxItem(item));
+            items.reverse().forEach(item => prependInboxItem(item, playSound));
             if (items.length === 0) updateInboxEmptyState();
+            inboxLoadedOnce = true;
         });
 }
 
