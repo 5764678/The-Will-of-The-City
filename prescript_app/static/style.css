@@ -165,7 +165,9 @@ input:focus-visible,
     height: 100vh;
     border: 0;
     border-radius: 0;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
     background: rgba(0, 0, 0, 0.92);
 }
 
@@ -328,10 +330,6 @@ input:focus-visible,
     font-size: 24px;
     letter-spacing: 0.08em;
     transition: color 0.2s ease;
-}
-
-#status.clear {
-    color: #7be08a;
 }
 
 #status.failed {
