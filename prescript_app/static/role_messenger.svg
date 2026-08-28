@@ -1,4 +1,10 @@
 <svg width="240" height="240" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
-  <rect width="240" height="240" fill="#050505"/>
-  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#f9b" font-size="20" font-family="monospace">Messenger</text>
+  <rect width="240" height="240" fill="#000000"/>
+  <circle cx="120" cy="120" r="92" fill="none" stroke="#c9a227" stroke-width="2" opacity="0.85"/>
+  <circle cx="120" cy="120" r="78" fill="none" stroke="#c9a227" stroke-width="1" opacity="0.35"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="#f9b" stroke-width="3">
+  <path d="M 82 130 L 162 114 L 126 150 L 114 126 Z" />
+  <line x1="62.0" y1="142.0" x2="90.0" y2="136.0" opacity="0.55"/>
+  <line x1="56.0" y1="154.0" x2="88.0" y2="147.0" opacity="0.35"/>
+</g>
 </svg>

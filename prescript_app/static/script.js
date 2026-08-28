@@ -17,13 +17,18 @@ function postForm(url, bodyString) {   // Wrapper around fetch() for POST reques
     });
 }
 
-function animateStatus(message) {                       // This function creates a "decode-style" animation effect for the status message, where random characters are rapidly replaced
+function animateStatus(message, statusClass) {          // This function creates a "decode-style" animation effect for the status message, where random characters are rapidly replaced
     const statusEl = document.getElementById("status"); // by the actual message characters over a short duration. It also plays a sound effect to enhance the experience.
-
+                                                          // statusClass ("clear"/"failed") tints the text green/red via CSS — see #status.clear/.failed in style.css.
     let symbols = "!@#$%^&*ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789";
     let current = Array(message.length).fill("");
     playAudio();
     let frame = 0;
+
+    statusEl.classList.remove("clear", "failed");
+    if (statusClass) {
+        statusEl.classList.add(statusClass);
+    }
 
     let interval = setInterval(() => {
         for (let i = 0; i < message.length; i++) {
@@ -41,12 +46,15 @@ function animateStatus(message) {                       // This function creates
         if (frame > 20) {
             clearInterval(interval);
             statusEl.innerText = ".-" + message + "-.";
-        }
 
-        setTimeout(() => {
-            statusEl.innerText = "";
-            statusEl.classList.remove("clear", "failed");
-        }, 4000);
+            // Scheduled only once, after the reveal finishes — previously this setTimeout was
+            // inside the interval callback, so it fired once per 100ms tick (~20 redundant timers
+            // stacked up for one status message, all doing the same idempotent clear).
+            setTimeout(() => {
+                statusEl.innerText = "";
+                statusEl.classList.remove("clear", "failed");
+            }, 4000);
+        }
     }, 100);
 }
 
@@ -84,7 +92,7 @@ function completePrescript() {         // This function is called when the user 
 
 
             if (data.status === "clear") {
-                animateStatus("Clear");
+                animateStatus("Clear", "clear");
             }
 
             setTimeout(() => {
@@ -121,7 +129,7 @@ function ignorePrescript() {           // This function is called when the user 
             decodeText(data.prescript);
 
             if (data.status === "failed") {
-                animateStatus("Failed");
+                animateStatus("Failed", "failed");
             }
 
             setTimeout(() => {
@@ -263,7 +271,7 @@ function getRoleForGrace(grace) {   // This function determines the user's role 
         return {
             name: "Turncoat",
             description: "Your alignment has tipped away from the City’s movement.",
-            image: "/static/turncoat_image.webp"
+            image: "/static/role_turncoat.svg"
         };
     }
 
@@ -271,7 +279,7 @@ function getRoleForGrace(grace) {   // This function determines the user's role 
         return {
             name: "Civilian",
             description: "You are still forming your cadence within the City.",
-            image: "/static/civilian_image.webp"
+            image: "/static/role_civilian.svg"
         };
     }
 
@@ -279,7 +287,7 @@ function getRoleForGrace(grace) {   // This function determines the user's role 
         return {
             name: "Proselyte",
             description: "You are learning to listen and respond to the City’s rhythms.",
-            image: "/static/proselyte_image.webp"
+            image: "/static/role_proselyte.svg"
         };
     }
 
@@ -290,14 +298,14 @@ function getRoleForGrace(grace) {   // This function determines the user's role 
             description: roleName === "Proxy"
                 ? "You act as a conduit to move the City’s motion along."
                 : "You carry messages through the City’s channels.",
-            image: roleName === "Proxy" ? "/static/proxy_image.webp" : "/static/messenger_image.webp"
+            image: roleName === "Proxy" ? "/static/role_proxy.svg" : "/static/role_messenger.svg"
         };
     }
 
     return {
         name: "Weaver",
         description: "You shape the pattern the City follows.",
-        image: "/static/weaver_image.webp"
+        image: "/static/role_weaver.svg"
     };
 }
 

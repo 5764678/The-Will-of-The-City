@@ -1,4 +1,9 @@
 <svg width="240" height="240" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
-  <rect width="240" height="240" fill="#100"/>
-  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#f55" font-size="20" font-family="monospace">Turncoat</text>
+  <rect width="240" height="240" fill="#000000"/>
+  <circle cx="120" cy="120" r="92" fill="none" stroke="#c9a227" stroke-width="2" opacity="0.85"/>
+  <circle cx="120" cy="120" r="78" fill="none" stroke="#c9a227" stroke-width="1" opacity="0.35"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="#f55" stroke-width="3">
+  <path d="M 151.9 131.6 A 34 34 0 0 1 88.1 131.6" />
+  <path d="M 88.1 108.4 A 34 34 0 0 1 151.9 108.4" />
+</g>
 </svg>
