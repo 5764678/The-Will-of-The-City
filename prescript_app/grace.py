@@ -1,26 +1,20 @@
+"""Pure grace-score math — no shared state lives here.
 
-grace = 0
+This used to hold a single module-level `grace` variable that every visitor read and wrote,
+meaning every anonymous (no saved name) visitor to the site shared one counter with everyone
+else, and it reset to 0 on every server restart/redeploy. Worse, update_grace() always wrote its
+result back into that global as a side effect, even for named users, which meant one named user's
+Complete/Ignore could quietly clobber the anonymous counter's value too.
 
-def get_grace(): # This function retrieves the current grace score. It simply returns the value of the global variable "grace", which is used to track the user's current grace score in the application.
-    global grace
-    return grace
+Now the caller (views.py) is entirely responsible for where "current grace" comes from and where
+the result gets stored — a UserProfile row for a named user, or the visitor's own session for an
+anonymous one (see _get_anon_grace/_set_anon_grace there). This module just does the arithmetic.
+"""
 
 
-def set_grace(value): # This function updates the grace score to a new value. It takes a value as an argument and assigns it to the global variable "grace", allowing the application to keep track of the user's current grace score as it changes based on their actions.
-    global grace
-    grace = value
-
-
-def update_grace(completed, reward, punishment, current_grace=None): # This function updates the grace score based on whether the user has completed a task and the associated reward or punishment. It takes the completion status, reward, and punishment values as arguments, along with an optional current_grace parameter to allow for updating the grace score based on a specific starting value.
-
-    global grace
-    if current_grace is None:
-        current_grace = grace
-
+def update_grace(completed, reward, punishment, current_grace=0):
+    """Applies one Complete (+reward) or Ignore (-punishment) to current_grace and returns the
+    new value. A pure function — reads nothing and writes nothing on its own."""
     if completed:
-        new_grace = current_grace + reward
-    else:
-        new_grace = current_grace - punishment
-
-    grace = new_grace
-    return new_grace
+        return current_grace + reward
+    return current_grace - punishment

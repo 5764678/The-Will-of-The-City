@@ -116,6 +116,18 @@ def _resolve_current(request):
     return current['text'], current['reward'], current['punishment'], 'session', None
 
 
+ANON_GRACE_SESSION_KEY = 'anon_grace'  # Grace for visitors who haven't saved a name — isolated per browser
+                                        # session instead of one value shared by literally everyone (see grace.py).
+
+
+def _get_anon_grace(request):
+    return request.session.get(ANON_GRACE_SESSION_KEY, 0)
+
+
+def _set_anon_grace(request, value):
+    request.session[ANON_GRACE_SESSION_KEY] = value
+
+
 def _webpush_subscriptions_for(username):
     if not username:
         return []
@@ -196,7 +208,7 @@ class home(TemplateView): # This class defines the view for the home page — an
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['grace'] = grace_module.get_grace()
+        context['grace'] = _get_anon_grace(self.request)
         return context
 
 
@@ -228,9 +240,9 @@ class aboutView(TemplateView): # This class defines the view for the about page 
 class roleView(TemplateView): # This class defines the view for the role page of the application, which displays the user's current role based on their grace score. It inherits from TemplateView and specifies 'role.html' as the template to render. The get_context_data method is overridden to include the user's current grace score in the context passed to the template, allowing the template to determine and display the appropriate role information based on that score.
     template_name = 'role.html'
 
-    def get_context_data(self, **kwargs): # This method prepares the context data for the role page. It retrieves the current grace score using the get_grace function from the grace module and adds it to the context dictionary that will be used in the template. This allows the template to determine the user's current role based on their grace score and display the relevant information accordingly.
+    def get_context_data(self, **kwargs): # This method prepares the context data for the role page. It retrieves the current grace score (this visitor's own session-scoped value if anonymous, see _get_anon_grace) and adds it to the context dictionary that will be used in the template. This allows the template to determine the user's current role based on their grace score and display the relevant information accordingly.
         context = super().get_context_data(**kwargs)
-        context['grace'] = grace_module.get_grace()
+        context['grace'] = _get_anon_grace(self.request)
         return context
 
 
@@ -303,7 +315,7 @@ def complete(request): # This function handles the completion of a prescript tas
         _maybe_notify(random.choice(EXPIRED_TAP_MESSAGES), username=username)
         return JsonResponse({'status': 'already_handled'}, status=409)
 
-    base_grace = grace_module.get_grace()
+    base_grace = _get_anon_grace(request)
 
     profile = None
     if username:
@@ -317,7 +329,7 @@ def complete(request): # This function handles the completion of a prescript tas
         profile.total_rewards += 1  # count of completions, not a mirror of the grace score
         profile.save()
     else:
-        grace_module.set_grace(new_grace)
+        _set_anon_grace(request, new_grace)
 
     _maybe_send_streak_resolution(profile, username=username)  # check before recording, so it sees the streak that's about to break
     _record_history(username, current_text, PrescriptHistory.COMPLETED)
@@ -347,7 +359,7 @@ def ignore(request): # This function handles the case when a user chooses to ign
         _maybe_notify(random.choice(EXPIRED_TAP_MESSAGES), username=username)
         return JsonResponse({'status': 'already_handled'}, status=409)
 
-    base_grace = grace_module.get_grace()
+    base_grace = _get_anon_grace(request)
 
     profile = None
     if username:
@@ -361,7 +373,7 @@ def ignore(request): # This function handles the case when a user chooses to ign
         profile.total_punishments += 1
         profile.save()
     else:
-        grace_module.set_grace(new_grace)
+        _set_anon_grace(request, new_grace)
 
     _record_history(username, current_text, PrescriptHistory.IGNORED)
     _maybe_trigger_ignore_alarm(profile, username=username)
@@ -404,8 +416,8 @@ def update_score(request): # This function is responsible for updating the user'
         'score': score
     })
 
-def get_score(request): # This function retrieves the current score for a given username. It checks if a username is provided in the POST request, and if so, it attempts to retrieve the corresponding user profile from the database. If the user profile exists, it returns that user's grace score. If the user does not exist or no username is given, it falls back to returning the global grace score. The function then returns a JsonResponse containing the status and the retrieved score.
-    score = grace_module.get_grace()
+def get_score(request): # This function retrieves the current score for a given username. It checks if a username is provided in the POST request, and if so, it attempts to retrieve the corresponding user profile from the database. If the user profile exists, it returns that user's grace score. If the user does not exist or no username is given, it falls back to this visitor's own session-scoped grace (see _get_anon_grace) rather than one value shared by every anonymous visitor. The function then returns a JsonResponse containing the status and the retrieved score.
+    score = _get_anon_grace(request)
     if request.method == "POST":
         username = request.POST.get('username')
         if username:
@@ -413,7 +425,7 @@ def get_score(request): # This function retrieves the current score for a given 
                 user_profile = UserProfile.objects.get(name=username)
                 score = user_profile.grace
             except UserProfile.DoesNotExist:
-                score = grace_module.get_grace()
+                score = _get_anon_grace(request)
 
     return JsonResponse({
         'status': 'success',
