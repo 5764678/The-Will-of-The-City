@@ -144,4 +144,11 @@ STORAGES = {
     },
 }
 
+# WhiteNoise has its own hardcoded extension->MIME map (it doesn't consult Python's mimetypes
+# module), and .webmanifest isn't in it — without this it serves manifest.webmanifest as
+# application/octet-stream, which some browsers refuse to treat as a web app manifest.
+WHITENOISE_MIMETYPES = {
+    ".webmanifest": "application/manifest+json",
+}
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
