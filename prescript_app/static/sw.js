@@ -5,7 +5,13 @@
 // whole app ("/") so it can intercept navigations to /home/, /menu/, /history/, etc. and receive
 // push events no matter which page (or no page) is currently open.
 
-const CACHE_NAME = "wotc-shell-v1";
+// Bump this whenever SHELL_ASSETS content changes (script.js, style.css, pwa.js, ...). A browser
+// only re-runs install/activate when sw.js's OWN bytes change — editing a cached asset alone is
+// invisible to it, so an already-installed phone keeps serving the stale cached copy forever
+// (confirmed live: the Index Device toggle shipped in script.js with no version bump here, and
+// zero /device/toggle/ requests ever reached the server from any phone as a result). skipWaiting()
+// + clients.claim() below mean a version bump takes effect on next load, no reinstall needed.
+const CACHE_NAME = "wotc-shell-v2";
 
 // A small, deliberately conservative app-shell cache — just enough that the terminal UI itself
 // still renders if you're offline or the network hiccups. Prescript/grace/history data always
