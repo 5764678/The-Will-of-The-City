@@ -51,6 +51,13 @@ class PendingNotification(models.Model):  # An inbox item: one prescript sitting
     # it's either tapped (Complete/Ignore, on the phone notification or in the home page inbox — same /complete//ignore/ endpoints
     # either way) or times out unanswered. Lets the next notify_trigger sweep auto-file an unanswered one as ignored instead of it
     # just sitting there forever. get_inbox reads these (resolved=False) to populate the home page's inbox list.
+    SCHEDULED = 'scheduled'
+    REQUESTED = 'requested'
+    SOURCE_CHOICES = [
+        (SCHEDULED, 'Scheduled'),
+        (REQUESTED, 'Requested'),
+    ]
+
     username = models.CharField(max_length=150)
     text = models.TextField()
     reward = models.IntegerField()
@@ -58,6 +65,10 @@ class PendingNotification(models.Model):  # An inbox item: one prescript sitting
     token = models.TextField(db_index=True)  # the exact signed `p` value sent in the notification's action URLs
     sent_at = models.DateTimeField(auto_now_add=True)
     resolved = models.BooleanField(default=False)
+    source = models.CharField(max_length=16, choices=SOURCE_CHOICES, default=REQUESTED)  # distinguishes an
+    # automatic notify_trigger send from a self-requested one — request_prescript's rows stay REQUESTED (the
+    # default) so a burst of "Request Prescript" taps can never be mistaken for missed scheduled sends. Lets
+    # notify_trigger's catch-up logic look at only SCHEDULED rows when deciding how far behind it is.
 
     class Meta:
         ordering = ['-sent_at']

@@ -34,7 +34,7 @@ from .notify import (
 
 # How long a notification's prescript stays actionable. Tap Complete/Ignore within this window
 # and it scores normally; let it run out and the next scheduled trigger auto-files it as ignored
-# (see _expire_stale_pending). Comfortably above the 30-minute sweep interval so a normal delay
+# (see _expire_stale_pending). Comfortably above the 15-minute sweep interval so a normal delay
 # in noticing your phone doesn't cost you anything.
 PRESCRIPT_TIME_LIMIT = datetime.timedelta(minutes=40)
 
@@ -42,6 +42,18 @@ PRESCRIPT_TIME_LIMIT = datetime.timedelta(minutes=40)
 # count) and the alarm burst kicks in. Each ignore beyond that sends one more message in the
 # burst than the last, capped at 5 (see send_ntfy_alarm_burst).
 IGNORE_SPAM_THRESHOLD = 3
+
+# Catch-up delivery (see _missed_sweep_count): GitHub Actions' schedule trigger drops a large
+# fraction of runs under load (measured directly against this repo's own run history — see
+# README), so a run that does fire treats every SCHEDULED PendingNotification gap since the last
+# one it sent this username as "late" rather than "never happened," and sends enough prescripts
+# now to make up for it. SWEEP_INTERVAL should track the shortest cron entry in
+# .github/workflows/prescript-notify.yml. Capped both in count (MAX_CATCHUP) and in how far back
+# it'll reach (CATCHUP_MAX_AGE) so a long outage produces a small catch-up burst, not a replay of
+# everything that was ever missed.
+SWEEP_INTERVAL = datetime.timedelta(minutes=15)
+MAX_CATCHUP = 4
+CATCHUP_MAX_AGE = datetime.timedelta(hours=3)
 
 # Indochina Time — fixed UTC+7 year-round, no DST to account for.
 NOTIFY_TZ = ZoneInfo("Asia/Bangkok")
@@ -490,6 +502,7 @@ def request_prescript(request): # Generates a prescript on demand (the inbox's "
 
     pending = PendingNotification.objects.create(
         username=username, text=text, reward=reward, punishment=punishment, token=token,
+        source=PendingNotification.REQUESTED,
     )
 
     return JsonResponse({
@@ -543,11 +556,40 @@ def _scheduled_recipients():
     return usernames, legacy_username
 
 
+def _missed_sweep_count(username):
+    """How many SCHEDULED prescripts this username is "behind" by, right now. GitHub Actions
+    drops most of this workflow's scheduled runs (confirmed against the repo's own run history —
+    see README), so a run that does fire can't assume the last SWEEP_INTERVAL was actually
+    covered — it might be the first one to land in hours. Comparing against the last SCHEDULED
+    send (never REQUESTED ones — see PendingNotification.source) turns "silently never arrives"
+    into "arrives a little late, possibly a few at once," capped so a long gap doesn't try to
+    replay everything that was ever missed.
+
+    Always returns at least 1 (there's always this sweep's own prescript to send).
+    """
+    last = (
+        PendingNotification.objects
+        .filter(username=username, source=PendingNotification.SCHEDULED)
+        .order_by('-sent_at')
+        .first()
+    )
+    if last is None:
+        return 1  # first scheduled send this username has ever gotten — nothing to catch up on
+
+    elapsed = timezone.now() - last.sent_at
+    if elapsed > CATCHUP_MAX_AGE:
+        return 1  # too long a gap to treat as "late" — just resume, don't manufacture a backlog
+
+    missed = elapsed // SWEEP_INTERVAL
+    return max(1, min(MAX_CATCHUP, missed))
+
+
 def _send_scheduled_prescript(base_url, username, context, allow_ntfy):
     """Generates and delivers one automatic prescript to one username — the per-recipient body of
     notify_trigger, pulled out so one sweep can independently serve every subscribed username
     (own random text, own grace/history/ignore-streak, own delivery outcome) instead of the single
-    hardcoded NOTIFY_USERNAME the site used to be limited to.
+    hardcoded NOTIFY_USERNAME the site used to be limited to. Called once per catch-up slot (see
+    _missed_sweep_count) when a run is making up for lost time, not just once per invocation.
 
     allow_ntfy gates the ntfy.sh fallback to just the legacy NOTIFY_USERNAME (see
     _scheduled_recipients) — everyone else is Web-Push-only.
@@ -563,6 +605,7 @@ def _send_scheduled_prescript(base_url, username, context, allow_ntfy):
 
     PendingNotification.objects.create(
         username=username, text=text, reward=reward, punishment=punishment, token=token,
+        source=PendingNotification.SCHEDULED,
     )
 
     sent = False
@@ -587,11 +630,17 @@ def _send_scheduled_prescript(base_url, username, context, allow_ntfy):
 
 
 def notify_trigger(request):
-    """Generates and delivers one automatic prescript to every subscribed recipient (see
+    """Generates and delivers a prescript to every subscribed recipient (see
     _scheduled_recipients) — every username with an active Web Push subscription, plus the legacy
     NOTIFY_USERNAME/ntfy fallback for its original owner. Each recipient gets their own
-    independently generated prescript, scored against their own grace/history/streak — this isn't
-    a broadcast, everyone's Complete/Ignore is entirely their own.
+    independently generated prescript(s), scored against their own grace/history/streak — this
+    isn't a broadcast, everyone's Complete/Ignore is entirely their own.
+
+    Catches up rather than assuming the last interval was covered (see _missed_sweep_count): if
+    it's been a while since this username's last scheduled send, this run sends more than one to
+    make up for it, capped so a long gap doesn't try to replay everything ever missed. Necessary
+    because GitHub Actions drops a large fraction of this workflow's scheduled runs outright (see
+    README) — without catch-up, a dropped run's prescript just never arrives at all.
 
     Meant to be called by an external scheduler (see .github/workflows/prescript-notify.yml) at
     fixed times of day, not by the browser — so it's authenticated with a shared secret header
@@ -618,17 +667,28 @@ def notify_trigger(request):
     base_url = request.build_absolute_uri('/').rstrip('/')
     context = _current_notify_context()
 
-    results = [
-        _send_scheduled_prescript(base_url, username, context, allow_ntfy=(username == legacy_username))
-        for username in usernames
-    ]
-    sent_count = sum(1 for r in results if r['status'] == 'sent')
+    recipients = []
+    for username in usernames:
+        missed = _missed_sweep_count(username)  # >1 means this run is catching up on dropped runs
+        allow_ntfy = username == legacy_username
+        sends = [
+            _send_scheduled_prescript(base_url, username, context, allow_ntfy=allow_ntfy)
+            for _ in range(missed)
+        ]
+        recipients.append({
+            'username': username,
+            'attempted': missed,
+            'sent': sum(1 for s in sends if s['status'] == 'sent'),
+        })
+
+    sent_count = sum(r['sent'] for r in recipients)
+    total_attempted = sum(r['attempted'] for r in recipients)
 
     return JsonResponse({
         'status': 'sent' if sent_count else 'error',
         'sent': sent_count,
-        'total': len(results),
-        'recipients': results,
+        'total': total_attempted,
+        'recipients': recipients,
     })
 
 

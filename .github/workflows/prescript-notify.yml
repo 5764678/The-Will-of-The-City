@@ -2,8 +2,11 @@ name: Send prescript notifications
 
 # All cron times below are UTC. Local zone is UTC+7 (no DST, so this mapping never changes).
 #
-# Ambient sweep: every 30 minutes, ~07:06-19:36 local. This also happens to land close to 4 of
-# the 6 themed anchor times below (07:00, 11:30, 16:00, 20:00) — the server picks the themed
+# Ambient sweep: every 15 minutes, ~07:06-19:51 local. Shortened from every 30 minutes after
+# measuring GitHub's actual drop rate against this repo's own run history — roughly 85% of
+# scheduled runs over a 3-day span never fired at all, which no amount of retrying-once-it-starts
+# can fix (see the curl flags below), only more attempts can. This also happens to land close to
+# 4 of the 6 themed anchor times below (07:00, 11:30, 16:00, 20:00) — the server picks the themed
 # trigger pool for those based on the actual clock (see _current_notify_context in views.py, and
 # NOTIFY_CONTEXT_WINDOWS' generous tolerance windows), not from anything encoded here, so there's
 # no double-firing and nothing else to keep in sync.
@@ -16,13 +19,20 @@ name: Send prescript notifications
 # minutes across all of GitHub Actions). Offsetting by 6 minutes doesn't eliminate GitHub's own
 # scheduling drift/drops entirely, but noticeably reduces contention. Every anchor here still
 # lands comfortably inside its themed window's tolerance in views.py.
+#
+# Whatever GitHub still drops isn't lost, though: notify_trigger's own catch-up logic
+# (_missed_sweep_count in views.py) compares against each recipient's last scheduled send and
+# makes up the gap on whichever run actually fires — turning "silently never arrives" into
+# "arrives a little late, possibly a few at once," capped so a long gap doesn't replay everything
+# that was ever missed. More frequent attempts here mean more chances one lands, and a shorter
+# gap for catch-up to bridge when they don't.
 on:
   schedule:
-    - cron: "6,36 0-12 * * *"  # every 30 min, ~07:06-19:36 local
-    - cron: "56 2 * * *"       # ~09:56 local — just finished morning uni course
-    - cron: "16 7 * * *"       # ~14:16 local — afternoon break
-    - cron: "6 13 * * *"       # ~20:06 local — night / end of sweep
-  workflow_dispatch: {}        # lets you fire a test notification manually from the Actions tab
+    - cron: "6,21,36,51 0-12 * * *"  # every 15 min, ~07:06-19:51 local
+    - cron: "56 2 * * *"             # ~09:56 local — just finished morning uni course
+    - cron: "16 7 * * *"             # ~14:16 local — afternoon break
+    - cron: "6 13 * * *"             # ~20:06 local — night / end of sweep
+  workflow_dispatch: {}              # lets you fire a test notification manually from the Actions tab
 
 jobs:
   notify:
@@ -33,7 +43,9 @@ jobs:
           # --max-time bumped 60->90s and --retry-all-errors added after confirming in Render's
           # logs that a cold-started free-tier instance can 502 for the first several seconds
           # after waking up — a plain retry a few seconds later succeeds once it's actually ready,
-          # instead of failing the whole run over what's really just "still booting."
+          # instead of failing the whole run over what's really just "still booting." This only
+          # helps once a run actually starts, though — see the catch-up note above for what
+          # handles GitHub not starting the run at all.
           curl -sS --fail --max-time 90 --retry 2 --retry-delay 8 --retry-all-errors \
             -H "X-Notify-Secret: ${{ secrets.NOTIFY_TRIGGER_SECRET }}" \
             "${{ secrets.RENDER_APP_URL }}/notify/trigger/"

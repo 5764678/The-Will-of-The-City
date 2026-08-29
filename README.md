@@ -64,19 +64,37 @@ The automatic sweep is a GitHub Actions `schedule` cron hitting `/notify/trigger
 background worker or in-process scheduler in this app at all, by design (Render's free web
 service has none, and one would die on every spin-down anyway). GitHub's own docs confirm what
 its run history here showed directly: scheduled workflows "can be delayed during periods of high
-loads... especially at the start of every hour," and "some queued jobs may be dropped" — which is
-exactly why the cron entries are offset a few minutes off `:00`/`:30` rather than sitting on them.
+loads... especially at the start of every hour," and "some queued jobs may be dropped" — measured
+directly against this repo: roughly 85% of scheduled runs over a 3-day span never fired at all.
+That's exactly why the cron entries are offset a few minutes off `:00`/`:30` (the single most
+congested minutes across all of GitHub Actions) rather than sitting on them, and why the sweep
+runs every 15 minutes instead of 30 — more attempts means more chances one actually gets queued.
 
-That reduces drops but doesn't eliminate GitHub's own scheduling variance. For tighter timing,
-add a second, independent trigger from [cron-job.org](https://cron-job.org) (genuinely free, no
-card, donation-funded, up to 1-per-minute granularity — verified directly against their site, not
-assumed) hitting the same endpoint a few minutes off the GitHub Actions one:
-```
-GET https://will-of-the-city.onrender.com/notify/trigger/
-Header: X-Notify-Secret: <same value as NOTIFY_TRIGGER_SECRET>
-```
-Two independent, uncorrelated schedulers firing the same idempotent endpoint is pure redundancy —
-whichever lands first wins for that sweep, neither depends on the other.
+Offsetting the timing only reduces drops, though — it can't eliminate them, since the cause is on
+GitHub's side. So `notify_trigger` also catches up: it compares each recipient's last scheduled
+send against now, and if it's been a while, sends enough prescripts on whichever run *does* fire
+to make up the gap (capped, so a multi-hour outage produces a small catch-up burst rather than
+replaying everything that was ever missed — see `_missed_sweep_count` in `views.py`). That turns
+GitHub silently dropping a run into that recipient's notification simply arriving a bit late,
+instead of not arriving at all.
+
+**If you want tighter timing than that combination realistically gets you**, the two options:
+
+1. **Stay on GitHub Actions + catch-up (current setup).** Free, no signup, nothing to maintain.
+   Realistic accuracy: a scheduled notification typically lands within 15–30 minutes of on-time;
+   occasionally later if GitHub drops several attempts in a row, but catch-up means it always
+   eventually lands rather than vanishing.
+2. **Add a dedicated free cron service** — e.g. [cron-job.org](https://cron-job.org) (genuinely
+   free, no card, donation-funded, verified directly against their site, not assumed) — hitting
+   the same endpoint independently:
+   ```
+   GET https://will-of-the-city.onrender.com/notify/trigger/
+   Header: X-Notify-Secret: <same value as NOTIFY_TRIGGER_SECRET>
+   ```
+   Needs a one-time signup (~5 minutes). Realistic accuracy: within a minute or two of on-time,
+   essentially always — it's purpose-built infrastructure, not competing with everyone else's CI
+   jobs the way GitHub Actions' scheduler does. Two independent schedulers hitting the same
+   idempotent endpoint is pure redundancy — whichever lands first wins for that sweep.
 
 ## Credits
 Project Moon inspiration
