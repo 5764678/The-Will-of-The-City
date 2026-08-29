@@ -251,6 +251,57 @@ function requestPrescript() { // The inbox's "Request Prescript" button — gene
         .then(data => {
             if (data.status === "success" && data.item) {
                 prependInboxItem(data.item);
+            } else if (data.status === "standby") {
+                // Index Device is off — nothing to add to the inbox, just say why.
+                animateStatus("Device on Standby", "failed");
+            }
+        })
+        .finally(() => {
+            if (btn) btn.disabled = false;
+        });
+}
+
+// ---- Index Device toggle (home page) ---------------------------------------------------------
+// Was a static "prescript device" label; now the clickable terminal pill itself, reflecting and
+// flipping this username's accepting_prescripts flag (see toggle_device/get_device_status in
+// views.py). Standby only stops *new* prescripts from being generated — nothing already in the
+// inbox is affected, so it's safe to toggle with unresolved items still sitting there.
+
+function setDeviceUI(accepting) {
+    const btn = document.getElementById("terminal");
+    const textEl = document.getElementById("deviceStatusText");
+    if (!btn || !textEl) return;
+
+    btn.classList.toggle("standby", !accepting);
+    btn.setAttribute("aria-pressed", accepting ? "true" : "false");
+    decodeTextInto(textEl, accepting ? "Operational" : "Standby");
+}
+
+function loadDeviceStatus() { // Called on page load so the pill reflects the real stored state, not just its
+    const btn = document.getElementById("terminal"); // default markup, before the visitor touches anything.
+    if (!btn) return;
+
+    const name = getStoredName().trim();
+    postForm("/device/status/", `username=${encodeURIComponent(name)}`)
+        .then(response => response.json())
+        .then(data => setDeviceUI(data.accepting !== false));
+}
+
+function toggleDevice() {
+    const name = getStoredName().trim();
+    if (!name) {
+        animateStatus("Save a name first");
+        return;
+    }
+
+    const btn = document.getElementById("terminal");
+    if (btn) btn.disabled = true;
+
+    postForm("/device/toggle/", `username=${encodeURIComponent(name)}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === "success") {
+                setDeviceUI(data.accepting);
             }
         })
         .finally(() => {
@@ -522,6 +573,12 @@ function initPage() {                     // This function initializes the page 
         // Catches a permission/name change made in another tab, or just coming back to a
         // backgrounded tab — cheap enough to just re-check every time the window regains focus.
         window.addEventListener("focus", loadInbox);
+    }
+
+    const deviceBtn = document.getElementById("terminal");
+    if (deviceBtn) {
+        loadDeviceStatus();
+        deviceBtn.addEventListener("click", toggleDevice);
     }
 }
 

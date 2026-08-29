@@ -89,6 +89,28 @@ input:focus-visible,
     text-transform: uppercase;
     font-size: 13px;
     opacity: 0.85;
+    /* #terminal is a <button> (the Index Device toggle) — override the generic button rule's
+       hover invert so the pill just brightens instead of flipping to a solid block, and keep its
+       own font-size instead of the generic 16px. */
+    transition: opacity 0.15s ease, border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+#terminal:hover {
+    background-color: rgba(89, 145, 219, 0.08);
+    color: #86bada;
+    opacity: 1;
+    box-shadow: none;
+}
+
+#terminal.standby {
+    border-color: #e0787b6b;
+    background: rgba(224, 120, 123, 0.1);
+    color: #e0787b;
+}
+
+#terminal.standby:hover {
+    background-color: rgba(224, 120, 123, 0.1);
+    color: #e0787b;
 }
 
 #completeBtn,

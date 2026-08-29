@@ -6,6 +6,13 @@ class UserProfile(models.Model):
     grace = models.IntegerField(default=0)
     total_rewards = models.IntegerField(default=0)
     total_punishments = models.IntegerField(default=0)
+    accepting_prescripts = models.BooleanField(default=True)  # The home page's "Index Device:
+    # Operational/Standby" toggle. False means this username is in standby: no *new* prescript
+    # gets generated for them, scheduled (notify_trigger) or on-demand (request_prescript) — see
+    # both in views.py. Doesn't touch anything already in flight: existing PendingNotification
+    # rows still expire/complete/ignore normally, and Web Push subscriptions are untouched. A
+    # missing UserProfile (e.g. the legacy NOTIFY_USERNAME fallback before its first toggle) is
+    # treated as accepting=True everywhere this is checked, so nobody is opted into standby by default.
 
     def __str__(self):
         return self.name

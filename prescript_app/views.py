@@ -497,6 +497,45 @@ def get_inbox(request): # Returns this username's still-unresolved prescripts (s
     })
 
 
+def _is_accepting(username):
+    """Whether `username` currently accepts new prescripts — the Index Device toggle (see
+    UserProfile.accepting_prescripts). No profile row yet means never toggled to standby, so this
+    defaults True rather than requiring a profile to exist first."""
+    if not username:
+        return True
+    value = UserProfile.objects.filter(name=username).values_list('accepting_prescripts', flat=True).first()
+    return True if value is None else value
+
+
+def get_device_status(request): # Returns whether `username`'s Index Device is Operational (accepting new
+    # prescripts) or Standby. Read-only — mirrors get_score's GET/POST-either pattern — so checking
+    # status never has the side effect of creating a profile the way toggle_device deliberately does.
+    username = (request.GET.get('username') or request.POST.get('username') or '').strip()
+    return JsonResponse({
+        'status': 'success',
+        'accepting': _is_accepting(username),
+    })
+
+
+@require_POST
+def toggle_device(request): # Flips `username`'s Index Device between Operational and Standby — the home
+    # page's terminal-pill button. Standby doesn't touch anything already in flight (existing inbox
+    # items still complete/ignore/expire normally); it only stops new prescripts from being
+    # generated for this username, scheduled (notify_trigger) or on-demand (request_prescript).
+    username = (request.POST.get('username') or '').strip()
+    if not username:
+        return JsonResponse({'status': 'error', 'detail': 'username is required'}, status=400)
+
+    profile, _ = UserProfile.objects.get_or_create(name=username)
+    profile.accepting_prescripts = not profile.accepting_prescripts
+    profile.save()
+
+    return JsonResponse({
+        'status': 'success',
+        'accepting': profile.accepting_prescripts,
+    })
+
+
 def request_prescript(request): # Generates a prescript on demand (the inbox's "Request Prescript" button) instead of waiting for the next scheduled
     # push. Creates the same kind of PendingNotification row notify_trigger does — same signed token, same 40-minute time limit, same auto-expiry sweep
     # — so it's indistinguishable from a scheduled one once it's in the inbox. No push is sent; the caller is already looking at the page.
@@ -506,6 +545,9 @@ def request_prescript(request): # Generates a prescript on demand (the inbox's "
     username = (request.POST.get('username') or '').strip()
     if not username:
         return JsonResponse({'status': 'error', 'detail': 'username is required'}, status=400)
+
+    if not _is_accepting(username):
+        return JsonResponse({'status': 'standby', 'detail': 'Index Device is in standby — set it to Operational to request a prescript.'})
 
     text, reward, punishment = generate_prescript()
     token = signing.dumps({'text': text, 'reward': reward, 'punishment': punishment})
@@ -691,10 +733,15 @@ def notify_trigger(request):
 
     recipients = []
     for username in usernames:
-        _expire_stale_pending(username)  # runs on every call regardless of due-ness, so a short
-        # heartbeat catches an unanswered prescript sooner than it would if this were gated on a send happening too.
+        _expire_stale_pending(username)  # runs on every call regardless of due-ness or standby, so a
+        # short heartbeat catches an unanswered prescript sooner than it would if this were gated on
+        # a send happening too — an already-sent prescript still needs to resolve even in standby.
 
-        due = _missed_sweep_count(username)  # 0 = nothing due for this recipient right now; >1 = catching up
+        accepting = _is_accepting(username)
+        # Standby: nothing new gets generated for this username. due is forced to 0 rather than
+        # skipping the recipient outright, so the response still accounts for every subscriber
+        # (see debugging note below) instead of silently omitting standby ones.
+        due = _missed_sweep_count(username) if accepting else 0
         allow_ntfy = username == legacy_username
         sends = [
             _send_scheduled_prescript(base_url, username, context, allow_ntfy=allow_ntfy)
@@ -704,6 +751,7 @@ def notify_trigger(request):
             'username': username,
             'due': due,
             'sent': sum(1 for s in sends if s['status'] == 'sent'),
+            'accepting': accepting,
         })
 
     sent_count = sum(r['sent'] for r in recipients)

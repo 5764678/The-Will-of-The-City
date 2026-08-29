@@ -24,9 +24,10 @@
 <body>
     <a href="/menu/" class="menu-toggle" aria-label="Open menu">☰</a>
 
-    <div id="terminal">
-        <div>prescript device</div>
-    </div>
+    <!-- Was a static "prescript device" label; now the Index Device toggle itself — click to flip
+         between Operational (accepting new prescripts) and Standby (see toggleDevice in script.js
+         and accepting_prescripts on UserProfile). -->
+    <button id="terminal" type="button" aria-pressed="true">Index Device: <span id="deviceStatusText">Operational</span></button>
 
     <div id="userGreeting" class="user-greeting"></div>
 
