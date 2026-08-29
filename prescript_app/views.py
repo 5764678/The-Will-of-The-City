@@ -2,6 +2,7 @@ import datetime
 import json
 import os
 import random
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -524,23 +525,82 @@ def _expire_stale_pending(username):
         _maybe_trigger_ignore_alarm(profile, username=username)
 
 
+def _scheduled_recipients():
+    """Every username that should get an automatic prescript on this sweep: anyone who's ever
+    enabled Web Push (has a PushSubscription row — that's the opt-in signal, no separate flag
+    needed), plus NOTIFY_USERNAME even without one. That legacy env var isn't "the one target"
+    any more — it's kept only so the original single-user ntfy fallback keeps working for its
+    original owner, since nobody else has an ntfy topic configured.
+
+    Returns (usernames: set[str], legacy_username: str).
+    """
+    usernames = set(
+        u for u in PushSubscription.objects.values_list('username', flat=True).distinct() if u
+    )
+    legacy_username = os.environ.get('NOTIFY_USERNAME', '').strip()
+    if legacy_username:
+        usernames.add(legacy_username)
+    return usernames, legacy_username
+
+
+def _send_scheduled_prescript(base_url, username, context, allow_ntfy):
+    """Generates and delivers one automatic prescript to one username — the per-recipient body of
+    notify_trigger, pulled out so one sweep can independently serve every subscribed username
+    (own random text, own grace/history/ignore-streak, own delivery outcome) instead of the single
+    hardcoded NOTIFY_USERNAME the site used to be limited to.
+
+    allow_ntfy gates the ntfy.sh fallback to just the legacy NOTIFY_USERNAME (see
+    _scheduled_recipients) — everyone else is Web-Push-only.
+    """
+    _expire_stale_pending(username)
+
+    text, reward, punishment = generate_prescript(context=context)
+    token = signing.dumps({'text': text, 'reward': reward, 'punishment': punishment})
+
+    username_qs = f"&username={quote(username)}"
+    complete_url = f"{base_url}/complete/?p={token}{username_qs}"
+    ignore_url = f"{base_url}/ignore/?p={token}{username_qs}"
+
+    PendingNotification.objects.create(
+        username=username, text=text, reward=reward, punishment=punishment, token=token,
+    )
+
+    sent = False
+    try:
+        sent = _send_webpush_to_all(
+            username, send_webpush_prescript, text,
+            complete_url=complete_url, ignore_url=ignore_url,
+        )
+    except Exception:
+        sent = False
+
+    if not sent and allow_ntfy:
+        topic = os.environ.get('NTFY_TOPIC')
+        if topic:
+            try:
+                send_ntfy_prescript(topic, text, complete_url=complete_url, ignore_url=ignore_url)
+                sent = True
+            except Exception:
+                sent = False
+
+    return {'username': username, 'status': 'sent' if sent else 'failed'}
+
+
 def notify_trigger(request):
-    """Generates a prescript and pushes it to your phone.
+    """Generates and delivers one automatic prescript to every subscribed recipient (see
+    _scheduled_recipients) — every username with an active Web Push subscription, plus the legacy
+    NOTIFY_USERNAME/ntfy fallback for its original owner. Each recipient gets their own
+    independently generated prescript, scored against their own grace/history/streak — this isn't
+    a broadcast, everyone's Complete/Ignore is entirely their own.
 
-    Meant to be called by an external scheduler (see .github/workflows/prescript-notify.yml)
-    at fixed times of day, not by the browser — so it's authenticated with a shared secret
-    header instead of CSRF/session, and works even while nobody has the site open.
-
-    Web Push (to whatever devices NOTIFY_USERNAME has enabled notifications on — see
-    push_subscribe) is tried first; ntfy.sh is the fallback, used only if NOTIFY_USERNAME has no
-    push subscription yet, or every push attempt failed. At least one of the two must be usable.
+    Meant to be called by an external scheduler (see .github/workflows/prescript-notify.yml) at
+    fixed times of day, not by the browser — so it's authenticated with a shared secret header
+    instead of CSRF/session, and works even while nobody has the site open.
 
     Configure via environment variables on the host:
       NOTIFY_TRIGGER_SECRET  required — must match the X-Notify-Secret header the caller sends
-      NOTIFY_USERNAME        required to reach anyone via Web Push — username whose subscriptions
-                              get pushed to, whose Grace the Complete/Ignore buttons affect, and
-                              who unanswered prescripts get auto-filed against
-      NTFY_TOPIC              optional — ntfy.sh fallback topic (subscribe to it in the ntfy app)
+      NOTIFY_USERNAME        optional legacy fallback — see _scheduled_recipients
+      NTFY_TOPIC             optional — ntfy.sh fallback topic, only ever used for NOTIFY_USERNAME
       VAPID_PUBLIC_KEY/
       VAPID_PRIVATE_KEY      required for Web Push — see README for how to generate a pair
     """
@@ -548,51 +608,28 @@ def notify_trigger(request):
     if not secret or request.headers.get('X-Notify-Secret') != secret:
         return JsonResponse({'status': 'forbidden'}, status=403)
 
-    username = os.environ.get('NOTIFY_USERNAME', '')
-    topic = os.environ.get('NTFY_TOPIC')
-    has_push = bool(username and _webpush_subscriptions_for(username))
-
-    if not has_push and not topic:
+    usernames, legacy_username = _scheduled_recipients()
+    if not usernames:
         return JsonResponse({
             'status': 'error',
-            'detail': 'No delivery path configured: NOTIFY_USERNAME has no push subscription and NTFY_TOPIC is not set',
+            'detail': 'No recipients: nobody has an active Web Push subscription, and NOTIFY_USERNAME is not set',
         }, status=500)
 
-    _expire_stale_pending(username)
-
-    context = _current_notify_context()
-    text, reward, punishment = generate_prescript(context=context)
-    token = signing.dumps({'text': text, 'reward': reward, 'punishment': punishment})
-
     base_url = request.build_absolute_uri('/').rstrip('/')
-    username_qs = f"&username={username}" if username else ""
-    complete_url = f"{base_url}/complete/?p={token}{username_qs}"
-    ignore_url = f"{base_url}/ignore/?p={token}{username_qs}"
+    context = _current_notify_context()
 
-    if username:
-        PendingNotification.objects.create(
-            username=username, text=text, reward=reward, punishment=punishment, token=token,
-        )
+    results = [
+        _send_scheduled_prescript(base_url, username, context, allow_ntfy=(username == legacy_username))
+        for username in usernames
+    ]
+    sent_count = sum(1 for r in results if r['status'] == 'sent')
 
-    sent = False
-    if has_push:
-        try:
-            sent = _send_webpush_to_all(
-                username, send_webpush_prescript, text,
-                complete_url=complete_url, ignore_url=ignore_url,
-            )
-        except Exception:
-            sent = False
-
-    if not sent:
-        if not topic:
-            return JsonResponse({'status': 'error', 'detail': 'Web Push failed and no NTFY_TOPIC fallback is configured'}, status=502)
-        try:
-            send_ntfy_prescript(topic, text, complete_url=complete_url, ignore_url=ignore_url)
-        except Exception as exc:
-            return JsonResponse({'status': 'error', 'detail': str(exc)}, status=502)
-
-    return JsonResponse({'status': 'sent', 'prescript': text})
+    return JsonResponse({
+        'status': 'sent' if sent_count else 'error',
+        'sent': sent_count,
+        'total': len(results),
+        'recipients': results,
+    })
 
 
 def service_worker(request):

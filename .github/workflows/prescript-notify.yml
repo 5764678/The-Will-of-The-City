@@ -2,22 +2,26 @@ name: Send prescript notifications
 
 # All cron times below are UTC. Local zone is UTC+7 (no DST, so this mapping never changes).
 #
-# Ambient sweep: every 30 minutes, 07:00-20:00 local. This also happens to land exactly on 4 of
+# Ambient sweep: every 30 minutes, ~07:06-19:36 local. This also happens to land close to 4 of
 # the 6 themed anchor times below (07:00, 11:30, 16:00, 20:00) — the server picks the themed
-# trigger pool for those based on the actual clock (see _current_notify_context in views.py),
-# not from anything encoded here, so there's no double-firing and nothing else to keep in sync.
+# trigger pool for those based on the actual clock (see _current_notify_context in views.py, and
+# NOTIFY_CONTEXT_WINDOWS' generous tolerance windows), not from anything encoded here, so there's
+# no double-firing and nothing else to keep in sync.
 #
-# The other 2 anchor times (09:50, 14:10) don't land on the :00/:30 grid, so they need their own
+# The other 2 anchor times (09:50, 14:10) don't land on the sweep's grid, so they need their own
 # entries. Every other slot in the sweep gets an unthemed, default-style prescript.
 #
-# GitHub's scheduler isn't minute-precise under load (more so right at :00/:30, which is peak
-# load across all of GitHub Actions) — expect occasional drift of a few minutes either way.
+# Deliberately NOT on :00/:30 — confirmed via the Actions run history that GitHub's scheduler was
+# dropping the large majority of runs scheduled exactly on those marks (the single most congested
+# minutes across all of GitHub Actions). Offsetting by 6 minutes doesn't eliminate GitHub's own
+# scheduling drift/drops entirely, but noticeably reduces contention. Every anchor here still
+# lands comfortably inside its themed window's tolerance in views.py.
 on:
   schedule:
-    - cron: "0,30 0-12 * * *"  # every 30 min, 07:00-19:30 local
-    - cron: "50 2 * * *"       # 09:50 local — just finished morning uni course
-    - cron: "10 7 * * *"       # 14:10 local — afternoon break
-    - cron: "0 13 * * *"       # 20:00 local — night / end of sweep
+    - cron: "6,36 0-12 * * *"  # every 30 min, ~07:06-19:36 local
+    - cron: "56 2 * * *"       # ~09:56 local — just finished morning uni course
+    - cron: "16 7 * * *"       # ~14:16 local — afternoon break
+    - cron: "6 13 * * *"       # ~20:06 local — night / end of sweep
   workflow_dispatch: {}        # lets you fire a test notification manually from the Actions tab
 
 jobs:
@@ -26,6 +30,10 @@ jobs:
     steps:
       - name: Trigger prescript notification
         run: |
-          curl -sS --fail --max-time 60 \
+          # --max-time bumped 60->90s and --retry-all-errors added after confirming in Render's
+          # logs that a cold-started free-tier instance can 502 for the first several seconds
+          # after waking up — a plain retry a few seconds later succeeds once it's actually ready,
+          # instead of failing the whole run over what's really just "still booting."
+          curl -sS --fail --max-time 90 --retry 2 --retry-delay 8 --retry-all-errors \
             -H "X-Notify-Secret: ${{ secrets.NOTIFY_TRIGGER_SECRET }}" \
             "${{ secrets.RENDER_APP_URL }}/notify/trigger/"

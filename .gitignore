@@ -3,3 +3,7 @@ __pycache__/
 staticfiles/
 .env
 vapid_keys_DO_NOT_COMMIT/
+# Production now uses Postgres (see settings.py DATABASE_URL) — this file is local-dev-only from
+# here on, so it stops being committed. It was never a real production datastore anyway: Render's
+# free-tier web service has no persistent disk, so every restart reset it regardless.
+db.sqlite3

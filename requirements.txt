@@ -2,3 +2,5 @@ Django>=6.0,<7
 gunicorn
 whitenoise
 pywebpush
+dj-database-url
+psycopg[binary]

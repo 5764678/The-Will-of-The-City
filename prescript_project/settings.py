@@ -89,13 +89,27 @@ WSGI_APPLICATION = 'prescript_project.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
+#
+# Render's free web services have no persistent disk and spin down after ~15 minutes idle — the
+# next request boots a brand-new container, wiping anything SQLite had written locally. That was
+# silently resetting grace/history/PushSubscription rows on every restart. DATABASE_URL (set on
+# Render, pointing at the Postgres instance) takes over in production; local dev with no
+# DATABASE_URL set keeps using the plain sqlite file, unchanged from before.
+import dj_database_url
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': 'db.sqlite3',
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if DATABASE_URL:
+    DATABASES = {
+        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
