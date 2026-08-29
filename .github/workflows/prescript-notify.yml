@@ -1,38 +1,22 @@
 name: Send prescript notifications
 
-# All cron times below are UTC. Local zone is UTC+7 (no DST, so this mapping never changes).
+# The actual schedule now lives on cron-job.org, calling /notify/trigger/ directly (confirmed
+# live and firing reliably — see the project history around 2026-08-29 for the measurement that
+# led to switching). This workflow's own `schedule:` trigger is deliberately removed rather than
+# left running alongside it: notify_trigger's due-check (SWEEP_INTERVAL / _missed_sweep_count in
+# views.py) makes it *safe* for more than one caller to hit the endpoint — a call arriving before
+# a recipient's next slot is genuinely due just finds nothing to do — but there's no reason to
+# keep two schedulers pointed at the same job once one is confirmed reliable, so this one stands
+# down. `workflow_dispatch` is kept so a test notification can still be fired by hand from the
+# Actions tab if ever needed — it just doesn't happen automatically any more.
 #
-# Ambient sweep: every 15 minutes, ~07:06-19:51 local. Shortened from every 30 minutes after
-# measuring GitHub's actual drop rate against this repo's own run history — roughly 85% of
-# scheduled runs over a 3-day span never fired at all, which no amount of retrying-once-it-starts
-# can fix (see the curl flags below), only more attempts can. This also happens to land close to
-# 4 of the 6 themed anchor times below (07:00, 11:30, 16:00, 20:00) — the server picks the themed
-# trigger pool for those based on the actual clock (see _current_notify_context in views.py, and
-# NOTIFY_CONTEXT_WINDOWS' generous tolerance windows), not from anything encoded here, so there's
-# no double-firing and nothing else to keep in sync.
-#
-# The other 2 anchor times (09:50, 14:10) don't land on the sweep's grid, so they need their own
-# entries. Every other slot in the sweep gets an unthemed, default-style prescript.
-#
-# Deliberately NOT on :00/:30 — confirmed via the Actions run history that GitHub's scheduler was
-# dropping the large majority of runs scheduled exactly on those marks (the single most congested
-# minutes across all of GitHub Actions). Offsetting by 6 minutes doesn't eliminate GitHub's own
-# scheduling drift/drops entirely, but noticeably reduces contention. Every anchor here still
-# lands comfortably inside its themed window's tolerance in views.py.
-#
-# Whatever GitHub still drops isn't lost, though: notify_trigger's own catch-up logic
-# (_missed_sweep_count in views.py) compares against each recipient's last scheduled send and
-# makes up the gap on whichever run actually fires — turning "silently never arrives" into
-# "arrives a little late, possibly a few at once," capped so a long gap doesn't replay everything
-# that was ever missed. More frequent attempts here mean more chances one lands, and a shorter
-# gap for catch-up to bridge when they don't.
+# If cron-job.org is ever unavailable and this needs to be the schedule again: GitHub was
+# measured dropping roughly 85% of this workflow's scheduled runs outright over a 3-day span
+# (see prior run history), so re-enabling it as a *sole* source of automatic delivery isn't
+# recommended — pair it with a shorter, non-:00/:30 cron grid the way it was configured before,
+# and lean on the due-check/catch-up logic to smooth over what still gets dropped.
 on:
-  schedule:
-    - cron: "6,21,36,51 0-12 * * *"  # every 15 min, ~07:06-19:51 local
-    - cron: "56 2 * * *"             # ~09:56 local — just finished morning uni course
-    - cron: "16 7 * * *"             # ~14:16 local — afternoon break
-    - cron: "6 13 * * *"             # ~20:06 local — night / end of sweep
-  workflow_dispatch: {}              # lets you fire a test notification manually from the Actions tab
+  workflow_dispatch: {}              # manual test only — see above for why there's no `schedule:` here
 
 jobs:
   notify:
