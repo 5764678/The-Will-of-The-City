@@ -101,7 +101,12 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
     DATABASES = {
-        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+        # conn_health_checks: Neon (unlike Render's old Postgres) auto-suspends its compute after
+        # ~5 minutes idle, which silently kills any connection Django was holding open under
+        # conn_max_age. Without this, the first request after a suspend reuses that dead
+        # connection and fails outright — health_checks makes Django ping before reuse and
+        # transparently reconnect instead.
+        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600, conn_health_checks=True)
     }
 else:
     DATABASES = {
