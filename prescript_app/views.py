@@ -648,6 +648,26 @@ def service_worker(request):
     return response
 
 
+def debug_push_status(request):
+    """Temporary, no-auth diagnostic — deliberately exposes nothing sensitive (counts and
+    timestamps only, no usernames/endpoints/keys) so it's safe to leave world-readable while
+    debugging why automatic delivery isn't confirmed yet. Added to answer "is there actually a
+    live subscription, and when" with real evidence instead of guessing from code review. Remove
+    once the automatic-delivery question is settled."""
+    subs = PushSubscription.objects.order_by('-created_at')
+    pending = PendingNotification.objects.order_by('-sent_at')
+    unresolved = pending.filter(resolved=False)
+
+    return JsonResponse({
+        'push_subscription_count': subs.count(),
+        'most_recent_subscription_at': subs.first().created_at.isoformat() if subs.exists() else None,
+        'pending_notification_count_total': pending.count(),
+        'pending_notification_count_unresolved': unresolved.count(),
+        'most_recent_pending_notification_at': pending.first().sent_at.isoformat() if pending.exists() else None,
+        'server_time': timezone.now().isoformat(),
+    })
+
+
 def vapid_public_key(request):
     """Returns the VAPID public key the client needs to pass to PushManager.subscribe()
     (as applicationServerKey). Public by design — it's not a secret, only the private key is."""

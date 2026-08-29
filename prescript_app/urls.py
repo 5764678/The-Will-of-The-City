@@ -19,6 +19,7 @@ urlpatterns = [
     path('notify/trigger/', views.notify_trigger),
     path('sw.js', views.service_worker),
     path('push/vapid-public-key/', views.vapid_public_key),
+    path('debug/push-status/', views.debug_push_status),
     path('push/subscribe/', views.push_subscribe),
     path('push/unsubscribe/', views.push_unsubscribe),
 ]
