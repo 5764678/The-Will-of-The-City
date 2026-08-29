@@ -12,16 +12,15 @@ services:
         value: 3.12.7
       # Persistent storage (see settings.py DATABASES). Render's free web services have no disk
       # and spin down when idle, so the old plain-SQLite-file setup silently lost everything —
-      # grace, history, and every PushSubscription — on each restart. Render injects the real
-      # connection string at deploy time; it's never visible in this file, in chat, or in any
-      # tool output. will-of-the-city-db is a free-tier Postgres instance that already exists —
-      # this just formally links it. NOTE: Render's free Postgres plan expires 30 days after
-      # creation (this one: created 2026-08-29, expires 2026-09-28) — see the accompanying
-      # write-up for what to do before then.
+      # grace, history, and every PushSubscription — on each restart.
+      #
+      # Set this manually in the Render dashboard to a Neon Postgres connection string (Neon's
+      # free tier never expires or deletes on a timer — it just suspends compute after idle and
+      # auto-wakes on the next query, unlike Render's own free Postgres, which self-deletes 30
+      # days after creation). Deliberately a plain manual var (not fromDatabase) so a future
+      # blueprint sync can never silently overwrite whatever's actually pasted in here.
       - key: DATABASE_URL
-        fromDatabase:
-          name: will-of-the-city-db
-          property: connectionString
+        sync: false
       # Phone push notifications (see .github/workflows/prescript-notify.yml) — set these
       # manually in the Render dashboard, they're not auto-generated.
       - key: NOTIFY_USERNAME

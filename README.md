@@ -35,7 +35,7 @@ secrets — see `render.yaml` / `.github/workflows/prescript-notify.yml`):
 
 | Variable | Required for | Notes |
 |---|---|---|
-| `DATABASE_URL` | persistence | wired via `render.yaml`'s `fromDatabase` — points at the `will-of-the-city-db` Postgres instance. Without it the app falls back to a local SQLite file, which does **not** survive Render restarts/deploys |
+| `DATABASE_URL` | persistence | set manually to a **Neon** Postgres connection string (neon.tech — free tier, never expires, just suspends compute on idle and auto-wakes on the next query). Without it the app falls back to a local SQLite file, which does **not** survive Render restarts/deploys. Render's own free Postgres was tried first but self-deletes 30 days after creation — not used for that reason |
 | `NOTIFY_TRIGGER_SECRET` | scheduled notifications | shared secret the GitHub Actions cron sends as `X-Notify-Secret` |
 | `NOTIFY_USERNAME` | legacy ntfy fallback | optional — see above |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Web Push | generate once, see below — **do not commit these** |
@@ -57,6 +57,26 @@ print('VAPID_PUBLIC_KEY=', b64(pub))
 print('VAPID_PRIVATE_KEY=', b64(priv))
 "
 ```
+
+### Scheduler reliability
+
+The automatic sweep is a GitHub Actions `schedule` cron hitting `/notify/trigger/` — there's no
+background worker or in-process scheduler in this app at all, by design (Render's free web
+service has none, and one would die on every spin-down anyway). GitHub's own docs confirm what
+its run history here showed directly: scheduled workflows "can be delayed during periods of high
+loads... especially at the start of every hour," and "some queued jobs may be dropped" — which is
+exactly why the cron entries are offset a few minutes off `:00`/`:30` rather than sitting on them.
+
+That reduces drops but doesn't eliminate GitHub's own scheduling variance. For tighter timing,
+add a second, independent trigger from [cron-job.org](https://cron-job.org) (genuinely free, no
+card, donation-funded, up to 1-per-minute granularity — verified directly against their site, not
+assumed) hitting the same endpoint a few minutes off the GitHub Actions one:
+```
+GET https://will-of-the-city.onrender.com/notify/trigger/
+Header: X-Notify-Secret: <same value as NOTIFY_TRIGGER_SECRET>
+```
+Two independent, uncorrelated schedulers firing the same idempotent endpoint is pure redundancy —
+whichever lands first wins for that sweep, neither depends on the other.
 
 ## Credits
 Project Moon inspiration
