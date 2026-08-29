@@ -43,14 +43,24 @@ PRESCRIPT_TIME_LIMIT = datetime.timedelta(minutes=40)
 # burst than the last, capped at 5 (see send_ntfy_alarm_burst).
 IGNORE_SPAM_THRESHOLD = 3
 
-# Catch-up delivery (see _missed_sweep_count): GitHub Actions' schedule trigger drops a large
-# fraction of runs under load (measured directly against this repo's own run history — see
-# README), so a run that does fire treats every SCHEDULED PendingNotification gap since the last
-# one it sent this username as "late" rather than "never happened," and sends enough prescripts
-# now to make up for it. SWEEP_INTERVAL should track the shortest cron entry in
-# .github/workflows/prescript-notify.yml. Capped both in count (MAX_CATCHUP) and in how far back
-# it'll reach (CATCHUP_MAX_AGE) so a long outage produces a small catch-up burst, not a replay of
-# everything that was ever missed.
+# Cadence authority: the app decides when a prescript is due, not whatever calls /notify/trigger/.
+# SWEEP_INTERVAL is the ONLY definition of the intended cadence — a call arriving before this much
+# time has passed since a recipient's last scheduled send finds nothing due for them and sends
+# nothing (see _missed_sweep_count). This is deliberate and load-bearing: it's what makes it safe
+# to call the endpoint as often as you like — from GitHub Actions, from a dedicated cron service,
+# from both at once — without needing that caller's own interval to match SWEEP_INTERVAL, or to
+# stay in sync with each other. A shorter heartbeat than SWEEP_INTERVAL just means the due-check
+# gets asked more often and catches the real boundary sooner; it never causes an extra send. The
+# cron file's own interval is just how often the question gets asked, nothing more — earlier
+# versions of this comment conflated the two, which is exactly what let a real "send unconditionally
+# on every call" bug hide here (fixed once, see git history — don't reintroduce a floor that
+# forces a send when nothing is actually due).
+#
+# GitHub Actions drops a large fraction of this workflow's scheduled runs outright (measured
+# directly against this repo's own history — see README), which is why catch-up exists at all: a
+# call that does land makes up for whatever SWEEP_INTERVAL-sized gaps passed since the last one,
+# capped by MAX_CATCHUP and CATCHUP_MAX_AGE so a long outage produces a small catch-up burst, not
+# a replay of everything that was ever missed.
 SWEEP_INTERVAL = datetime.timedelta(minutes=15)
 MAX_CATCHUP = 4
 CATCHUP_MAX_AGE = datetime.timedelta(hours=3)
@@ -557,15 +567,23 @@ def _scheduled_recipients():
 
 
 def _missed_sweep_count(username):
-    """How many SCHEDULED prescripts this username is "behind" by, right now. GitHub Actions
-    drops most of this workflow's scheduled runs (confirmed against the repo's own run history —
-    see README), so a run that does fire can't assume the last SWEEP_INTERVAL was actually
-    covered — it might be the first one to land in hours. Comparing against the last SCHEDULED
-    send (never REQUESTED ones — see PendingNotification.source) turns "silently never arrives"
-    into "arrives a little late, possibly a few at once," capped so a long gap doesn't try to
-    replay everything that was ever missed.
+    """How many SCHEDULED prescripts this username is actually due for, right now — the app's own
+    cadence check (see SWEEP_INTERVAL), not a count that trusts the caller's timing. Returns 0,
+    genuinely, if less than SWEEP_INTERVAL has passed since this username's last scheduled send:
+    nothing is due yet, and that is the normal, expected result for most calls once something
+    reliable (a short heartbeat, or GitHub Actions' unreliable one) is calling this often. Purely
+    per-username — one recipient's due-ness is computed independently and never affects another's.
 
-    Always returns at least 1 (there's always this sweep's own prescript to send).
+    A brand-new subscriber (no prior scheduled send at all) is a deliberate special case, not a
+    fallback default: they get exactly 1 immediately, on the next call, as a "welcome" prescript —
+    better than making someone who just turned notifications on wait out a full interval for their
+    first one. Every case after that is governed purely by elapsed time.
+
+    Once something is genuinely due, GitHub Actions dropping the call that would have covered it
+    (confirmed against this repo's own run history — see README) is still handled: the count
+    reflects every full SWEEP_INTERVAL that's elapsed since the last one, capped by MAX_CATCHUP and
+    CATCHUP_MAX_AGE so a long gap produces a small catch-up burst rather than replaying everything
+    that was ever missed.
     """
     last = (
         PendingNotification.objects
@@ -574,28 +592,29 @@ def _missed_sweep_count(username):
         .first()
     )
     if last is None:
-        return 1  # first scheduled send this username has ever gotten — nothing to catch up on
+        return 1  # deliberate welcome-prescript case — see docstring, not a floor on the general case
 
     elapsed = timezone.now() - last.sent_at
+    if elapsed < SWEEP_INTERVAL:
+        return 0  # not due yet — the expected outcome for a call arriving sooner than SWEEP_INTERVAL
+
     if elapsed > CATCHUP_MAX_AGE:
         return 1  # too long a gap to treat as "late" — just resume, don't manufacture a backlog
 
-    missed = elapsed // SWEEP_INTERVAL
-    return max(1, min(MAX_CATCHUP, missed))
+    return min(MAX_CATCHUP, elapsed // SWEEP_INTERVAL)  # >= 1 here: elapsed >= SWEEP_INTERVAL already established
 
 
 def _send_scheduled_prescript(base_url, username, context, allow_ntfy):
     """Generates and delivers one automatic prescript to one username — the per-recipient body of
     notify_trigger, pulled out so one sweep can independently serve every subscribed username
     (own random text, own grace/history/ignore-streak, own delivery outcome) instead of the single
-    hardcoded NOTIFY_USERNAME the site used to be limited to. Called once per catch-up slot (see
-    _missed_sweep_count) when a run is making up for lost time, not just once per invocation.
+    hardcoded NOTIFY_USERNAME the site used to be limited to. Called once per due slot (see
+    _missed_sweep_count) when a run is making up for lost time, not just once per invocation — and
+    not at all when nothing is due, so this only runs when there's an actual send to make.
 
     allow_ntfy gates the ntfy.sh fallback to just the legacy NOTIFY_USERNAME (see
     _scheduled_recipients) — everyone else is Web-Push-only.
     """
-    _expire_stale_pending(username)
-
     text, reward, punishment = generate_prescript(context=context)
     token = signing.dumps({'text': text, 'reward': reward, 'punishment': punishment})
 
@@ -636,15 +655,18 @@ def notify_trigger(request):
     independently generated prescript(s), scored against their own grace/history/streak — this
     isn't a broadcast, everyone's Complete/Ignore is entirely their own.
 
-    Catches up rather than assuming the last interval was covered (see _missed_sweep_count): if
-    it's been a while since this username's last scheduled send, this run sends more than one to
-    make up for it, capped so a long gap doesn't try to replay everything ever missed. Necessary
-    because GitHub Actions drops a large fraction of this workflow's scheduled runs outright (see
-    README) — without catch-up, a dropped run's prescript just never arrives at all.
+    The app itself decides whether anything is actually due (see SWEEP_INTERVAL /
+    _missed_sweep_count) — whatever calls this is just a heartbeat, and can safely call as often
+    as it likes. Most calls should find nothing due for most recipients and send nothing; that's
+    the expected, successful "nothing_due" outcome below, not an error. When something IS due,
+    catch-up (see _missed_sweep_count) also covers GitHub Actions dropping a large fraction of
+    this workflow's scheduled runs outright (see README): a call landing late sends enough to make
+    up the gap, capped so a long gap doesn't try to replay everything that was ever missed.
 
-    Meant to be called by an external scheduler (see .github/workflows/prescript-notify.yml) at
-    fixed times of day, not by the browser — so it's authenticated with a shared secret header
-    instead of CSRF/session, and works even while nobody has the site open.
+    Meant to be called by an external scheduler (see .github/workflows/prescript-notify.yml) —
+    not by the browser, so it's authenticated with a shared secret header instead of CSRF/session,
+    and works even while nobody has the site open. Safe to call from more than one scheduler at
+    once, or faster than SWEEP_INTERVAL — see SWEEP_INTERVAL's own comment.
 
     Configure via environment variables on the host:
       NOTIFY_TRIGGER_SECRET  required — must match the X-Notify-Secret header the caller sends
@@ -669,25 +691,35 @@ def notify_trigger(request):
 
     recipients = []
     for username in usernames:
-        missed = _missed_sweep_count(username)  # >1 means this run is catching up on dropped runs
+        _expire_stale_pending(username)  # runs on every call regardless of due-ness, so a short
+        # heartbeat catches an unanswered prescript sooner than it would if this were gated on a send happening too.
+
+        due = _missed_sweep_count(username)  # 0 = nothing due for this recipient right now; >1 = catching up
         allow_ntfy = username == legacy_username
         sends = [
             _send_scheduled_prescript(base_url, username, context, allow_ntfy=allow_ntfy)
-            for _ in range(missed)
+            for _ in range(due)
         ]
         recipients.append({
             'username': username,
-            'attempted': missed,
+            'due': due,
             'sent': sum(1 for s in sends if s['status'] == 'sent'),
         })
 
     sent_count = sum(r['sent'] for r in recipients)
-    total_attempted = sum(r['attempted'] for r in recipients)
+    total_due = sum(r['due'] for r in recipients)
+
+    if total_due == 0:
+        status = 'nothing_due'   # normal, expected, successful — most calls should land here
+    elif sent_count > 0:
+        status = 'sent'          # at least one recipient who was due actually got theirs
+    else:
+        status = 'error'         # someone was due and every delivery attempt for them failed
 
     return JsonResponse({
-        'status': 'sent' if sent_count else 'error',
+        'status': status,
         'sent': sent_count,
-        'total': total_attempted,
+        'total_due': total_due,
         'recipients': recipients,
     })
 
