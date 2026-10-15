@@ -1,30 +1,21 @@
 {% extends "base.html" %}
-{% load static %}
 {% block title %}About · The Will of The City{% endblock %}
 {% block page_id %}about{% endblock %}
-{% block main_class %}page--about{% endblock %}
 
 {% block content %}
-<header class="page-head">
-    <p class="eyebrow">Supplemental record</p>
-    <h1 data-decode>About the Prescripts</h1>
-    <p class="page-head__sub">Additional project information and authorship notes.</p>
-</header>
+<h1 class="cmdline"><span class="prompt__caret">&gt;</span> open --archive supplemental</h1>
 
-<div class="tabs" role="tablist" aria-label="Documents">
-    <button type="button" role="tab" class="tabs__btn is-active" aria-selected="true" aria-controls="docLetter" id="tabLetter">Transmission</button>
-    <button type="button" role="tab" class="tabs__btn" aria-selected="false" aria-controls="docNotes" id="tabNotes">Project notes</button>
+<div class="filter" role="tablist" aria-label="Documents">
+    <button type="button" role="tab" class="cmd cmd--inline tabs__btn is-active" aria-selected="true" aria-controls="docLetter" id="tabLetter"><span class="cmd__key">a</span>transmission</button>
+    <button type="button" role="tab" class="cmd cmd--inline tabs__btn" aria-selected="false" aria-controls="docNotes" id="tabNotes"><span class="cmd__key">b</span>project notes</button>
 </div>
 
-<article class="letter term" id="docLetter" role="tabpanel" aria-labelledby="tabLetter">
-    <div class="term__bar"><span class="term__title">INDEX://TRANSMISSION/0001</span><span class="term__meta">DECRYPTED</span></div>
-    <span class="letter__seal" aria-hidden="true"><img src="{% static 'index_logo.webp' %}" alt=""></span>
-    <dl class="letter__head">
-        <div><dt>From</dt><dd>The Index</dd></div>
-        <div><dt>To</dt><dd id="mailRecipient">Citizen</dd></div>
-        <div><dt>Subject</dt><dd data-decode>The workings of the Prescripts</dd></div>
-    </dl>
-    <div class="letter__body">
+<article class="block doc" id="docLetter" role="tabpanel" aria-labelledby="tabLetter">
+    <div class="kv"><span class="kv__k">from</span><span class="kv__v bright">The Index</span></div>
+    <div class="kv"><span class="kv__k">to</span><span class="kv__v bright" id="mailRecipient">Citizen</span></div>
+    <div class="kv"><span class="kv__k">subject</span><span class="kv__v bright">The workings of the Prescripts</span></div>
+    <div class="rule"></div>
+    <div class="doc__body">
             <p class="reveal">Child of the City,</p>
             <p class="reveal">You are not here because curiosity led you correctly. You are here because arrival itself was already accounted for.</p>
             <p class="reveal">The City produces endless motion: footsteps, hesitation, collisions, breath, unfinished thoughts, the tremor of machinery, the pause before speech. None of it is lost. What appears to you as noise gathers into order elsewhere.</p>
@@ -45,17 +36,15 @@
             <p class="reveal">Read carefully. Complete what can be completed. Leave what must remain unexplained.</p>
             <p class="reveal">The City has already continued without asking whether you agreed.</p>
     </div>
-    <p class="letter__sign reveal">— The Index</p>
+    <p class="doc__sign dim reveal">-- END OF TRANSMISSION --</p>
 </article>
 
-<article class="letter term" id="docNotes" role="tabpanel" aria-labelledby="tabNotes" hidden>
-    <div class="term__bar"><span class="term__title">INDEX://ARCHIVE/SUPPLEMENTAL</span><span class="term__meta">PUBLIC</span></div>
-    <dl class="letter__head">
-        <div><dt>Archive</dt><dd>Supplemental Record</dd></div>
-        <div><dt>Classification</dt><dd>Public Reference</dd></div>
-        <div><dt>Subject</dt><dd>Project Information</dd></div>
-    </dl>
-    <div class="letter__body letter__body--notes">
+<article class="block doc" id="docNotes" role="tabpanel" aria-labelledby="tabNotes" hidden>
+    <div class="kv"><span class="kv__k">archive</span><span class="kv__v bright">Supplemental Record</span></div>
+    <div class="kv"><span class="kv__k">class</span><span class="kv__v bright">Public Reference</span></div>
+    <div class="kv"><span class="kv__k">subject</span><span class="kv__v bright">Project Information</span></div>
+    <div class="rule"></div>
+    <div class="doc__body doc__body--notes">
             <p class="reveal"><strong>Project:</strong><br> Will of The City is a fanwork inspired by The Index and their Prescripts from the Project Moon game series.</p>
             <p class="reveal"><strong>Description:</strong><br> This section is intended for anyone curious about the project beyond the interface itself. One of the main ideas behind this work was to make Prescript generation feel less repetitive than simple pre-written task lists.</p>
             <p class="reveal"><strong>Prescript Generation:</strong><br> Most Prescripts are not fully pre-written. Instead, they are assembled by dividing instructions into multiple structured parts and randomly selecting from large pools of phrases that are designed to combine into grammatically coherent results. This allows for a very large number of possible Prescripts while still keeping them readable and strange in tone.</p>

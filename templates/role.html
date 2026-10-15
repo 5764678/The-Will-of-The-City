@@ -2,94 +2,55 @@
 {% load static %}
 {% block title %}Role · The Will of The City{% endblock %}
 {% block page_id %}role{% endblock %}
-{% block main_class %}page--role{% endblock %}
 
 {% block content %}
-<section class="role-hero term" aria-labelledby="roleName">
-    <div class="term__bar"><span class="term__title">INDEX://STANDING</span><span class="term__meta" id="roleBadge">VERIFIED</span></div>
-    <div class="role-hero__inner">
-    <div class="role-hero__seal">
-        <span class="role-hero__orbit" aria-hidden="true"></span>
-        <img id="roleImage" src="{% static 'role_placeholder.svg' %}" alt="Role seal" class="role-hero__img">
-    </div>
+<h1 class="cmdline"><span class="prompt__caret">&gt;</span> standing --verbose <span class="dim" id="userGreeting"></span></h1>
 
-    <div class="role-hero__body">
-        <p class="eyebrow" id="userGreeting">Citizen</p>
-        <h1 class="role-hero__name" id="roleName">Civilian</h1>
-        <p class="role-hero__desc" id="roleDescription">Your current standing within the City's network.</p>
+<section class="block standing">
+    <figure class="seal" id="sealFrame">
+        <img id="roleImage" src="{% static 'role_placeholder.svg' %}" alt="Role seal">
+        <figcaption class="seal__caption" id="sealCaption">CURRENT</figcaption>
+    </figure>
 
-        <div class="role-hero__stats">
-            <div>
-                <span class="stat__label">Grace</span>
-                <span class="stat__value" id="roleScore">{{ grace }}</span>
-            </div>
-            <div>
-                <span class="stat__label">Next rank</span>
-                <span class="stat__value stat__value--sm" id="roleNext">—</span>
-            </div>
-        </div>
-    </div>
+    <div class="standing__readout">
+        <div class="kv"><span class="kv__k">rank</span><span class="kv__v bright" id="roleName">CIVILIAN</span></div>
+        <div class="kv"><span class="kv__k">grace</span><span class="kv__v bright" id="roleScore">{{ grace }}</span></div>
+        <div class="kv"><span class="kv__k">next</span><span class="kv__v" id="roleNext">--</span></div>
+        <p class="standing__desc dim" id="roleDescription">Your current standing within the City's network.</p>
+        <div class="textbar" id="roleBar" aria-hidden="true"></div>
     </div>
 </section>
 
-<!-- Rank ladder: one node per threshold, with a marker at the current grace. Built by
-     renderLadder() in script.js from the same ROLE_TIERS table the cards use. -->
-<section class="ladder" aria-label="Rank ladder">
-    <div class="ladder__track" id="ladderTrack">
-        <span class="ladder__fill" id="ladderFill"></span>
-        <span class="ladder__marker" id="ladderMarker"><span id="ladderMarkerLabel">0</span></span>
-    </div>
-    <ol class="ladder__nodes" id="ladderNodes"></ol>
-</section>
+<section class="block" aria-labelledby="levelsTitle">
+    <div class="rule"><span id="levelsTitle">CLEARANCE LEVELS</span></div>
 
-<h2 class="section-title">Clearance levels</h2>
-<section class="role-grid">
-    <article class="role-card" data-role="Turncoat" tabindex="0">
-        <div class="role-card__image"><img src="{% static 'role_turncoat.svg' %}" alt="" loading="lazy"></div>
-        <div class="role-card__meta"><span class="role-card__range">−1 and below</span></div>
-        <h3 class="role-card__title">Turncoat</h3>
-        <p class="role-card__info">Renegade from the City’s rhythm.</p>
-        <div class="role-card__lock"><span class="role-card__lock-label">Locked</span></div>
-    </article>
-
-    <article class="role-card" data-role="Civilian" tabindex="0">
-        <div class="role-card__image"><img src="{% static 'role_civilian.svg' %}" alt="" loading="lazy"></div>
-        <div class="role-card__meta"><span class="role-card__range">0 – 50</span></div>
-        <h3 class="role-card__title">Civilian</h3>
-        <p class="role-card__info">The base level; your motion is still forming.</p>
-        <div class="role-card__lock"><span class="role-card__lock-label">Locked</span></div>
-    </article>
-
-    <article class="role-card" data-role="Proselyte" tabindex="0">
-        <div class="role-card__image"><img src="{% static 'role_proselyte.svg' %}" alt="" loading="lazy"></div>
-        <div class="role-card__meta"><span class="role-card__range">51 – 125</span></div>
-        <h3 class="role-card__title">Proselyte</h3>
-        <p class="role-card__info">You are hearing the City’s cadence.</p>
-        <div class="role-card__lock"><span class="role-card__lock-label">Locked</span></div>
-    </article>
-
-    <article class="role-card" data-role="Proxy" tabindex="0">
-        <div class="role-card__image"><img src="{% static 'role_proxy.svg' %}" alt="" loading="lazy"></div>
-        <div class="role-card__meta"><span class="role-card__range">126 – 200</span></div>
-        <h3 class="role-card__title">Proxy</h3>
-        <p class="role-card__info">You are a node, routing motion onward.</p>
-        <div class="role-card__lock"><span class="role-card__lock-label">Locked</span></div>
-    </article>
-
-    <article class="role-card" data-role="Messenger" tabindex="0">
-        <div class="role-card__image"><img src="{% static 'role_messenger.svg' %}" alt="" loading="lazy"></div>
-        <div class="role-card__meta"><span class="role-card__range">126 – 200</span></div>
-        <h3 class="role-card__title">Messenger</h3>
-        <p class="role-card__info">You are the conduit between points.</p>
-        <div class="role-card__lock"><span class="role-card__lock-label">Locked</span></div>
-    </article>
-
-    <article class="role-card" data-role="Weaver" tabindex="0">
-        <div class="role-card__image"><img src="{% static 'role_weaver.svg' %}" alt="" loading="lazy"></div>
-        <div class="role-card__meta"><span class="role-card__range">201 and above</span></div>
-        <h3 class="role-card__title">Weaver</h3>
-        <p class="role-card__info">You shape the City’s pattern.</p>
-        <div class="role-card__lock"><span class="role-card__lock-label">Locked</span></div>
-    </article>
+    <!-- One row per rank. Hover / focus a row to preview its seal in the frame above (unlocked
+         ranks only). Status cells are filled by updateRoleUI() in script.js. -->
+    <table class="levels">
+        <thead>
+            <tr><th>LVL</th><th>RANK</th><th>GRACE</th><th>STATUS</th></tr>
+        </thead>
+        <tbody>
+            <tr class="role-card" data-role="Turncoat" data-img="{% static 'role_turncoat.svg' %}" tabindex="0">
+                <td>-1</td><td>TURNCOAT</td><td>&lt; 0</td><td class="levels__status">--</td>
+            </tr>
+            <tr class="role-card" data-role="Civilian" data-img="{% static 'role_civilian.svg' %}" tabindex="0">
+                <td>00</td><td>CIVILIAN</td><td>0–50</td><td class="levels__status">--</td>
+            </tr>
+            <tr class="role-card" data-role="Proselyte" data-img="{% static 'role_proselyte.svg' %}" tabindex="0">
+                <td>01</td><td>PROSELYTE</td><td>51–125</td><td class="levels__status">--</td>
+            </tr>
+            <tr class="role-card" data-role="Proxy" data-img="{% static 'role_proxy.svg' %}" tabindex="0">
+                <td>02</td><td>PROXY</td><td>126–200</td><td class="levels__status">--</td>
+            </tr>
+            <tr class="role-card" data-role="Messenger" data-img="{% static 'role_messenger.svg' %}" tabindex="0">
+                <td>02</td><td>MESSENGER</td><td>126–200</td><td class="levels__status">--</td>
+            </tr>
+            <tr class="role-card" data-role="Weaver" data-img="{% static 'role_weaver.svg' %}" tabindex="0">
+                <td>03</td><td>WEAVER</td><td>201+</td><td class="levels__status">--</td>
+            </tr>
+        </tbody>
+    </table>
+    <p class="dim small">Proxy and Messenger share a level; the City assigns one.</p>
 </section>
 {% endblock %}

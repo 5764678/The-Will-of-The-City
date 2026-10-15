@@ -2,51 +2,49 @@
 {% load static %}
 {% block title %}Terminal · The Will of The City{% endblock %}
 {% block page_id %}menu{% endblock %}
-{% block main_class %}page--menu{% endblock %}
 
 {% block content %}
-<div class="terminal-grid">
-    <section class="term identity">
-        <div class="term__bar"><span class="term__title">INDEX://TERMINAL/IDENTITY</span><span class="term__meta" id="identityState">UNREGISTERED</span></div>
-        <div class="identity__seal">
-            <img src="{% static 'detailed_index_logo.webp' %}" alt="The Index emblem" class="identity__logo">
-        </div>
+<h1 class="cmdline"><span class="prompt__caret">&gt;</span> terminal <span class="dim">--status <span id="identityState">UNREGISTERED</span></span></h1>
 
-        <form class="identity__form" id="nameForm" autocomplete="on">
-            <label for="usernameInput" class="field-label">Designation</label>
-            <div class="field-row">
-                <input id="usernameInput" type="text" placeholder="Enter your name" autocomplete="name" maxlength="150" spellcheck="false">
-                <button id="btnSave" type="submit" class="btn btn--primary">Save</button>
-            </div>
-            <p class="field-hint" id="nameHint">Your name ties grace, history and notifications to you on every device.</p>
-        </form>
+<section class="block terminal-head print">
+    <img src="{% static 'index_logo.webp' %}" alt="The Index emblem" class="terminal-head__logo" width="72" height="84">
+    <pre class="terminal-head__text">INDEX PRESCRIPT DEVICE  rev.3
+<span class="dim">fanwork terminal · the will of the city</span></pre>
+</section>
 
-        <div class="identity__notify">
-            <div class="field-label">Notifications</div>
-            <div id="installBanner" class="notice" style="display: none;">
-                Add this to your Home Screen to receive prescripts as notifications: tap
-                <strong>Share</strong> → <strong>Add to Home Screen</strong>, then open it from there.
-            </div>
-            <div class="notify-controls">
-                <button id="installAppBtn" type="button" class="btn" style="display: none;">Install App</button>
-                <button id="enableNotifyBtn" type="button" class="btn" style="display: none;">Enable Notifications</button>
-                <div id="notifyStatus" class="notify-status"></div>
-            </div>
-        </div>
-    </section>
+<section class="block" aria-labelledby="idTitle">
+    <div class="rule"><span id="idTitle">IDENTITY</span></div>
+    <form class="register" id="nameForm" autocomplete="on">
+        <label for="usernameInput" class="register__label"><span class="prompt__caret">&gt;</span> designation:</label>
+        <input id="usernameInput" type="text" placeholder="enter name" autocomplete="name" maxlength="150" spellcheck="false">
+        <button id="btnSave" type="submit" class="cmd">SAVE</button>
+    </form>
+    <p class="dim small">Your designation ties grace, history and notifications to you on every device.</p>
+</section>
 
-    <section class="nav-tiles" aria-label="Sections">
-        <h1 class="section-title" data-decode>Terminal</h1>
+<section class="block" aria-labelledby="notifyTitle">
+    <div class="rule"><span id="notifyTitle">NOTIFICATIONS</span></div>
+    <div id="installBanner" class="notice" style="display: none;">
+        Add this to your Home Screen to receive prescripts as notifications: tap
+        <span class="bright">Share</span> → <span class="bright">Add to Home Screen</span>, then open it from there.
+    </div>
+    <div class="notify-controls">
+        <button id="installAppBtn" type="button" class="cmd" style="display: none;">INSTALL APP</button>
+        <button id="enableNotifyBtn" type="button" class="cmd" style="display: none;">ENABLE NOTIFICATIONS</button>
+    </div>
+    <p id="notifyStatus" class="dim small notify-status"></p>
+</section>
+
+<section class="block" aria-labelledby="dirTitle">
+    <div class="rule"><span id="dirTitle">DIRECTORY</span></div>
+    <nav class="directory">
         {% for link in menu_links %}
-            <a href="{{ link.url }}" class="nav-tile" style="--i: {{ forloop.counter0 }}">
-                <span class="nav-tile__index">0{{ forloop.counter }}</span>
-                <span class="nav-tile__body">
-                    <span class="nav-tile__label">{{ link.label }}</span>
-                    <span class="nav-tile__desc">{{ link.desc }}</span>
-                </span>
-                <span class="nav-tile__arrow" aria-hidden="true">→</span>
+            <a href="{{ link.url }}" class="directory__row">
+                <span class="directory__key">[{{ forloop.counter }}]</span>
+                <span class="directory__label">{{ link.label|upper }}</span>
+                <span class="directory__desc">{{ link.desc }}</span>
             </a>
         {% endfor %}
-    </section>
-</div>
+    </nav>
+</section>
 {% endblock %}

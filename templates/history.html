@@ -1,62 +1,31 @@
 {% extends "base.html" %}
 {% block title %}History · The Will of The City{% endblock %}
 {% block page_id %}history{% endblock %}
-{% block main_class %}page--history{% endblock %}
 
 {% block content %}
-<header class="page-head">
-    <p class="eyebrow">Record of procurations</p>
-    <h1 id="historyHeader" data-decode>History</h1>
-</header>
+<h1 class="cmdline"><span class="prompt__caret">&gt;</span> record --owner <span class="bright" id="recordOwner">CITIZEN</span></h1>
 
-<section class="stats" aria-label="Summary">
-    <div class="stat panel">
-        <span class="stat__label">Issued</span>
-        <span class="stat__value" id="statTotal">0</span>
-    </div>
-    <div class="stat panel stat--clear">
-        <span class="stat__label">Cleared</span>
-        <span class="stat__value" id="statCompleted">0</span>
-    </div>
-    <div class="stat panel stat--failed">
-        <span class="stat__label">Ignored</span>
-        <span class="stat__value" id="statIgnored">0</span>
-    </div>
-    <div class="stat panel stat--ring">
-        <svg class="ring" viewBox="0 0 44 44" aria-hidden="true">
-            <circle class="ring__track" cx="22" cy="22" r="18"/>
-            <circle class="ring__fill" id="statRateRing" cx="22" cy="22" r="18"/>
-        </svg>
-        <span class="stat__label">Compliance</span>
-        <span class="stat__value"><span id="statRate">0</span>%</span>
-    </div>
-    <div class="stat panel">
-        <span class="stat__label">Current streak</span>
-        <span class="stat__value" id="statStreak">0</span>
-    </div>
+<section class="block print" aria-label="Summary">
+    <div class="kv"><span class="kv__k">issued</span><span class="kv__v bright" id="statTotal">0</span></div>
+    <div class="kv"><span class="kv__k">cleared</span><span class="kv__v bright" id="statCompleted">0</span></div>
+    <div class="kv"><span class="kv__k">ignored</span><span class="kv__v fail" id="statIgnored">0</span></div>
+    <div class="kv"><span class="kv__k">streak</span><span class="kv__v bright" id="statStreak">0</span></div>
+    <div class="kv"><span class="kv__k">compliance</span><span class="kv__v"><span class="bright"><span id="statRate">0</span>%</span></span></div>
+    <div class="textbar" id="rateBar" aria-hidden="true"></div>
 </section>
 
-<section class="term">
-    <div class="term__bar">
-        <span class="term__title">INDEX://RECORD/<span id="recordOwner">CITIZEN</span></span>
-        <span class="term__meta" id="recordCount">0 ENTRIES</span>
+<section class="block">
+    <div class="rule"><span>ENTRIES <span id="recordCount">0</span></span></div>
+
+    <div class="filter" role="tablist" aria-label="Filter history">
+        <span class="dim">query --filter=</span>
+        <button type="button" role="tab" class="cmd cmd--inline segmented__btn is-active" aria-selected="true" data-filter="all">all</button>
+        <button type="button" role="tab" class="cmd cmd--inline segmented__btn" aria-selected="false" data-filter="completed">cleared</button>
+        <button type="button" role="tab" class="cmd cmd--inline segmented__btn" aria-selected="false" data-filter="ignored">ignored</button>
     </div>
 
-    <div class="term__prompt">
-        <span class="term__caret">&gt;</span>
-        <span>query --filter</span>
-        <div class="segmented" role="tablist" aria-label="Filter history">
-            <button type="button" role="tab" class="segmented__btn is-active" aria-selected="true" data-filter="all">all</button>
-            <button type="button" role="tab" class="segmented__btn" aria-selected="false" data-filter="completed">cleared</button>
-            <button type="button" role="tab" class="segmented__btn" aria-selected="false" data-filter="ignored">ignored</button>
-        </div>
-    </div>
-
-    <div id="history" class="timeline">
-        <div class="empty-state" id="historyEmpty">
-            <span class="empty-state__ring" aria-hidden="true"></span>
-            <p>Reading the record<span class="cursor"></span></p>
-        </div>
+    <div id="history" class="entries">
+        <p class="dim">reading record<span class="cursor"></span></p>
     </div>
 </section>
 {% endblock %}

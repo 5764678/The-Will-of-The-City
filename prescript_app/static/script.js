@@ -1,7 +1,8 @@
 // The Will of The City — client script, loaded on every page (see templates/base.html).
 //
-// Top-level function declarations stay global on purpose: pwa.js calls getStoredName() and
-// loadInbox() directly. Each page section below no-ops when its elements aren't on the page.
+// Top-level function declarations stay global on purpose: pwa.js calls getStoredName(),
+// loadInbox() and ensurePushRegistered() across files. Each page section no-ops when its elements
+// aren't on the page.
 
 "use strict";
 
@@ -62,13 +63,10 @@ function updateNameUI() {
     const page = document.body.dataset.page;
 
     const greeting = $("userGreeting");
-    if (greeting) greeting.textContent = page === "role" ? `${name}'s standing` : name;
-
-    const historyHeader = $("historyHeader");
-    if (historyHeader) historyHeader.textContent = `${name}'s procurations`;
+    if (greeting) greeting.textContent = page === "role" ? `--user ${name.toLowerCase()}` : name.toUpperCase();
 
     const recordOwner = $("recordOwner");
-    if (recordOwner) recordOwner.textContent = name.toUpperCase();
+    if (recordOwner) recordOwner.textContent = name.toLowerCase();
 
     const mailRecipient = $("mailRecipient");
     if (mailRecipient) mailRecipient.textContent = name;
@@ -93,13 +91,6 @@ function playAudio() { // Rewinds first so rapid repeats retrigger instead of wa
     beep.currentTime = 0;
     beep.volume = 0.4;
     beep.play().catch(() => { /* autoplay blocked until the first user gesture — expected */ });
-
-    const pager = $("pager");
-    if (pager) {
-        pager.classList.remove("is-beeping");
-        void pager.offsetWidth;
-        pager.classList.add("is-beeping");
-    }
 }
 
 function buzz(pattern) {
@@ -114,18 +105,17 @@ function initSoundToggle() {
     const sync = () => {
         const on = !isMuted();
         btn.setAttribute("aria-pressed", on ? "true" : "false");
-        btn.setAttribute("aria-label", on ? "Sound on" : "Sound off");
+        $("soundState").textContent = on ? "ON" : "OFF";
     };
     sync();
     btn.addEventListener("click", () => {
         try { localStorage.setItem("wotc_sound", isMuted() ? "on" : "off"); } catch (err) { /* ignore */ }
         sync();
         if (!isMuted()) playAudio();
-        toast(isMuted() ? "Sound muted" : "Sound on");
     });
 }
 
-// ---- Small UI helpers ------------------------------------------------------------------------
+// ---- Small helpers ---------------------------------------------------------------------------
 
 function toast(message, kind) {
     const host = $("toasts");
@@ -172,6 +162,27 @@ function decodeTextInto(el, newText, speed = 30) { // Character-scramble reveal.
     step();
 }
 
+function typeInto(el, text, speed = 16) { // Plain typewriter; resolves when done.
+    return new Promise(resolve => {
+        if (!el) return resolve();
+        if (REDUCED_MOTION) {
+            el.textContent = text;
+            return resolve();
+        }
+        const runId = (el._typeRun || 0) + 1;
+        el._typeRun = runId;
+        let i = 0;
+        const step = () => {
+            if (el._typeRun !== runId) return resolve();
+            i += 1;
+            el.textContent = text.slice(0, i);
+            if (i < text.length) setTimeout(step, speed);
+            else resolve();
+        };
+        step();
+    });
+}
+
 function animateNumber(el, from, to, duration = 900) {
     if (!el) return;
     if (REDUCED_MOTION || from === to) {
@@ -203,6 +214,8 @@ function pad2(n) { return String(n).padStart(2, "0"); }
 
 function hhmmss(date) { return `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`; }
 
+function hhmm(date) { return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`; }
+
 function stableHash(seed) {
     return Array.from(seed).reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 }
@@ -211,6 +224,124 @@ function escapeHTML(text) {
     const div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Width of one monospace character in the page font, for sizing [####---] bars to their line.
+let charWidth = 0;
+function measureChar() {
+    if (charWidth) return charWidth;
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font:inherit";
+    probe.textContent = "0".repeat(40);
+    document.body.appendChild(probe);
+    charWidth = probe.getBoundingClientRect().width / 40 || 8.25;
+    probe.remove();
+    return charWidth;
+}
+
+// Renders [######------] into `el`, sized to fill the line. `suffix` sits after the bar.
+function renderTextbar(el, fraction, { suffix = "", urgent = false } = {}) {
+    if (!el) return;
+    const width = el.clientWidth || el.parentElement.clientWidth;
+    const cells = Math.max(10, Math.min(56, Math.floor(width / measureChar()) - 3 - suffix.length));
+    const on = Math.round(Math.max(0, Math.min(1, fraction)) * cells);
+    el.innerHTML = `[<span class="on">${"#".repeat(on)}</span><span class="off">${"-".repeat(cells - on)}</span>]${escapeHTML(suffix)}`;
+    el.classList.toggle("is-urgent", urgent);
+}
+
+// ---- Screen printing -------------------------------------------------------------------------
+// Every page arrives the way the boot sequence does: the command line types itself, then each line
+// of output prints in order. Any tap or key finishes it instantly.
+
+function printScreen() {
+    const main = $("main");
+    if (!main || REDUCED_MOTION) return;
+
+    const cmd = main.querySelector(".cmdline");
+    const lines = Array.from(main.querySelectorAll(".block > *, .screen > .filter, .levels tbody tr, .entries > *"));
+    let finished = false;
+
+    const finish = () => {
+        if (finished) return;
+        finished = true;
+        lines.forEach(el => el.style.removeProperty("--d"));
+        if (cmd && cmd._html !== undefined) {
+            cmd._typeRun = (cmd._typeRun || 0) + 1;
+            cmd.innerHTML = cmd._html;
+        }
+        document.removeEventListener("pointerdown", finish);
+        document.removeEventListener("keydown", finish);
+    };
+    document.addEventListener("pointerdown", finish, { once: true });
+    document.addEventListener("keydown", finish, { once: true });
+
+    let start = 60;
+    if (cmd) {
+        cmd._html = cmd.innerHTML;
+        const text = cmd.textContent.replace(/\s+/g, " ").trim();
+        cmd.textContent = "";
+        start += Math.min(text.length * 14, 500);
+        setTimeout(() => {
+            typeInto(cmd, text, 14).then(() => { if (!finished) cmd.innerHTML = cmd._html; });
+        }, 60);
+    }
+
+    const step = Math.max(18, Math.min(40, 700 / Math.max(lines.length, 1)));
+    lines.forEach((el, i) => {
+        el.style.setProperty("--d", `${Math.round(start + i * step)}ms`);
+        el.classList.add("pl");
+    });
+    setTimeout(finish, start + lines.length * step + 200);
+}
+
+// Cut to black before following an internal link, so the next page prints onto a dark screen.
+function initPageTransitions() {
+    const go = (href) => {
+        if (REDUCED_MOTION) {
+            location.href = href;
+            return;
+        }
+        document.body.classList.add("is-leaving");
+        setTimeout(() => { location.href = href; }, 130);
+    };
+
+    document.addEventListener("click", (event) => {
+        const link = event.target.closest("a[href]");
+        if (!link || event.defaultPrevented || event.button !== 0) return;
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || link.target) return;
+        const url = new URL(link.href, location.href);
+        if (url.origin !== location.origin || url.hash) return;
+        if (url.pathname === location.pathname) return;
+        event.preventDefault();
+        go(url.href);
+    });
+
+    // [1]-[5] jump between sections, like a terminal menu.
+    document.addEventListener("keydown", (event) => {
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        if (isTyping(event.target)) return;
+        const link = document.querySelector(`.nav__link[data-key="${event.key}"]`);
+        if (link && !link.classList.contains("is-active")) {
+            event.preventDefault();
+            go(link.href);
+        }
+    });
+
+    // Back/forward cache restores the page as it was left (blacked out) — undo that.
+    window.addEventListener("pageshow", () => document.body.classList.remove("is-leaving"));
+}
+
+function isTyping(target) {
+    const tag = (target.tagName || "").toLowerCase();
+    return tag === "input" || tag === "textarea" || target.isContentEditable;
+}
+
+function initClock() {
+    const el = $("statusClock");
+    if (!el) return;
+    const tick = () => { el.textContent = hhmmss(new Date()); };
+    tick();
+    setInterval(() => { if (!document.hidden) tick(); }, 1000);
 }
 
 // ---- Roles -----------------------------------------------------------------------------------
@@ -224,13 +355,17 @@ const ROLE_INFO = {
     Weaver: { description: "You shape the pattern the City follows.", image: "/static/role_weaver.svg" },
 };
 
-// Minimum grace for each tier. Proxy and Messenger share a tier; which one a user gets is picked
+// Minimum grace for each rank. Proxy and Messenger share a level; which one a user gets is picked
 // deterministically from their name, so it never flips between page loads.
 const ROLE_THRESHOLDS = { Turncoat: -Infinity, Civilian: 0, Proselyte: 51, Proxy: 126, Messenger: 126, Weaver: 201 };
 
 function stablePick(seed, options) {
     const hash = Array.from(seed).reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 0);
     return options[hash % options.length];
+}
+
+function pairedRole() {
+    return stablePick(getStoredName().trim() || "__anon__", ["Proxy", "Messenger"]);
 }
 
 function toNumber(grace) {
@@ -249,69 +384,53 @@ function getRoleForGrace(grace) {
     if (n <= -1) name = "Turncoat";
     else if (n <= 50) name = "Civilian";
     else if (n <= 125) name = "Proselyte";
-    else if (n <= 200) name = stablePick(getStoredName().trim() || "__anon__", ["Proxy", "Messenger"]);
+    else if (n <= 200) name = pairedRole();
     else name = "Weaver";
     return { name, ...ROLE_INFO[name] };
 }
 
-// Where the user sits relative to the next rank: { role, nextName, nextAt, pct (0..1), toNext }.
+// Where the user sits relative to the next rank: { role, nextName, pct (0..1), toNext }.
 function rankProgress(grace) {
     const n = toNumber(grace) || 0;
     const role = getRoleForGrace(n);
-    const pair = stablePick(getStoredName().trim() || "__anon__", ["Proxy", "Messenger"]);
     const clamp = (v) => Math.max(0, Math.min(1, v));
 
-    if (n < 0) return { role, nextName: "Civilian", nextAt: 0, pct: clamp(1 + n / 50), toNext: -n };
-    if (n <= 50) return { role, nextName: "Proselyte", nextAt: 51, pct: clamp(n / 51), toNext: 51 - n };
-    if (n <= 125) return { role, nextName: pair, nextAt: 126, pct: clamp((n - 51) / 75), toNext: 126 - n };
-    if (n <= 200) return { role, nextName: "Weaver", nextAt: 201, pct: clamp((n - 126) / 75), toNext: 201 - n };
-    return { role, nextName: null, nextAt: null, pct: 1, toNext: 0 };
-}
-
-// Ladder position (0..100%) — piecewise so every tier gets an equal stretch of track.
-function ladderPosition(grace) {
-    const n = toNumber(grace) || 0;
-    if (n < 0) return Math.max(0, 25 + (n / 50) * 25);
-    if (n <= 50) return 25 + (n / 51) * 25;
-    if (n <= 125) return 50 + ((n - 51) / 75) * 25;
-    if (n <= 200) return 75 + ((n - 126) / 75) * 25;
-    return 100;
+    if (n < 0) return { role, nextName: "Civilian", pct: clamp(1 + n / 50), toNext: -n };
+    if (n <= 50) return { role, nextName: "Proselyte", pct: clamp(n / 51), toNext: 51 - n };
+    if (n <= 125) return { role, nextName: pairedRole(), pct: clamp((n - 51) / 75), toNext: 126 - n };
+    if (n <= 200) return { role, nextName: "Weaver", pct: clamp((n - 126) / 75), toNext: 201 - n };
+    return { role, nextName: null, pct: 1, toNext: 0 };
 }
 
 // ---- Grace (shared by every page) -------------------------------------------------------------
 
 let currentGrace = null;
 
-function setGrace(value, { animate = true } = {}) {
+function setGrace(value) {
     const next = toNumber(value);
-    if (Number.isNaN(next)) return;
+    if (Number.isNaN(next)) return 0;
     const prev = currentGrace;
     currentGrace = next;
-    const from = prev === null ? 0 : prev;
+    const from = prev === null ? next : prev;
     const delta = prev === null ? 0 : next - prev;
 
     const graceEl = $("grace");
     if (graceEl) {
-        animateNumber(graceEl, animate ? from : next, next, prev === null ? 1100 : 800);
+        animateNumber(graceEl, from, next, 700);
         if (delta) {
             graceEl.classList.remove("is-up", "is-down");
-            restartClass(graceEl, delta > 0 ? "is-up" : "is-down", 1300);
+            restartClass(graceEl, delta > 0 ? "is-up" : "is-down", 1200);
             const deltaEl = $("graceDelta");
             if (deltaEl) {
-                deltaEl.textContent = (delta > 0 ? "+" : "−") + Math.abs(delta);
-                deltaEl.classList.remove("is-up", "is-down");
-                restartClass(deltaEl, delta > 0 ? "is-up" : "is-down", 1500);
+                deltaEl.textContent = `(${delta > 0 ? "+" : "−"}${Math.abs(delta)})`;
+                deltaEl.className = `delta ${delta > 0 ? "is-up" : "is-down"}`;
+                clearTimeout(deltaEl._fade);
+                deltaEl._fade = setTimeout(() => deltaEl.classList.add("is-fading"), 2400);
             }
         }
     }
 
-    const chip = $("graceChip");
-    if (chip) {
-        animateNumber(chip, animate ? from : next, next, 800);
-        const link = chip.closest(".grace-chip");
-        if (delta && link) restartClass(link, "is-bump", 700);
-    }
-
+    animateNumber($("graceChip"), from, next, 700);
     updateRankProgress(next);
     if ($("roleName")) updateRoleUI(next);
     return delta;
@@ -321,9 +440,8 @@ function updateRankProgress(grace) {
     const nameEl = $("rankName");
     if (!nameEl) return;
     const p = rankProgress(grace);
-    nameEl.textContent = p.role.name;
-    $("rankNext").textContent = p.nextName ? `${p.toNext} to ${p.nextName}` : "Apex reached";
-    $("rankBar").style.width = `${Math.round(p.pct * 100)}%`;
+    nameEl.textContent = p.role.name.toUpperCase();
+    $("rankNext").textContent = p.nextName ? `· ${p.toNext} to ${p.nextName.toLowerCase()}` : "· apex";
 }
 
 function loadScore() {
@@ -333,7 +451,7 @@ function loadScore() {
 }
 
 // =============================================================================================
-// HOME — the Index device
+// HOME — the prescript queue
 // =============================================================================================
 
 const device = {
@@ -341,11 +459,11 @@ const device = {
     index: 0,               // which one is on screen
     known: new Set(),       // every token seen this page load, to detect genuinely new arrivals
     resolved: new Set(),    // tokens resolved here, so a racing poll can't bring them back
-    decoded: new Set(),     // tokens whose reveal animation already played
+    decoded: new Set(),     // tokens whose decode reveal already played
     accepting: true,
     loadedOnce: false,
     busy: false,
-    outcome: false,         // CLEAR/FAILED takeover currently on screen
+    outcome: false,         // an outcome printout currently owns the queue area
     view: "",               // signature of what's rendered, so ticks don't re-render needlessly
 };
 
@@ -364,7 +482,7 @@ function currentItem() {
     return device.items[device.index] || null;
 }
 
-// ---- Device log (persists across page loads within the session) ----
+// ---- Log (persists across page loads within the session) ----
 
 function addLog(message, cls) {
     let lines = [];
@@ -381,6 +499,10 @@ function renderLog(lines) {
     if (!lines) {
         try { lines = JSON.parse(sessionStorage.getItem("wotc_log") || "[]"); } catch (err) { lines = []; }
     }
+    if (!lines.length) {
+        list.innerHTML = `<li><span class="dim">no events this session</span></li>`;
+        return;
+    }
     list.innerHTML = lines.map(l =>
         `<li><time>${escapeHTML(l.t)}</time><span class="${escapeHTML(l.c)}">${escapeHTML(l.m)}</span></li>`
     ).join("");
@@ -389,132 +511,91 @@ function renderLog(lines) {
 // ---- Rendering ----
 
 function renderScreen(force) {
-    const body = $("screenBody");
+    const body = $("queueBody");
     if (!body) return;
 
-    const pager = $("pager");
     const name = getStoredName().trim();
     const item = currentItem();
     const count = device.items.length;
 
-    pager.classList.toggle("is-standby", !device.accepting);
-    pager.classList.toggle("has-msg", count > 0 && device.accepting);
-    pager.classList.toggle("is-linked", !!name);
-
-    $("screenCounter").textContent = `MSG ${pad2(count ? device.index + 1 : 0)}/${pad2(count)}`;
-    $("screenState").textContent = !name ? "○ UNLINKED" : !device.accepting ? "■ STANDBY" : count ? "● INCOMING" : "● LINKED";
-
-    const keyPrev = $("keyPrev"), keyNext = $("keyNext");
-    keyPrev.disabled = count < 2;
-    keyNext.disabled = count < 2;
+    $("screenCounter").textContent = `${pad2(count ? device.index + 1 : 0)}/${pad2(count)}`;
+    $("keyPrev").disabled = count < 2 || device.outcome;
+    $("keyNext").disabled = count < 2 || device.outcome;
     $("keyComplete").disabled = !item || device.busy || device.outcome;
     $("keyIgnore").disabled = !item || device.busy || device.outcome;
 
-    renderQueueDots();
-
-    if (device.outcome) return; // the takeover owns the screen until it finishes
+    if (device.outcome) return; // the outcome printout owns the area until it finishes
 
     const view = !name ? "noname" : item ? `item:${item.token}` : device.accepting ? "idle" : "standby";
     if (view === device.view && !force) return;
     device.view = view;
 
-    if (!item) {
-        $("screenStakes").innerHTML = "";
-        $("screenTimer").textContent = "";
-        renderSegbar(0, false);
-    }
-
     if (view === "noname") {
         body.innerHTML = `
-            <div class="scr-view scr-idle">
-                <div class="scr-emblem"><img src="/static/index_logo.webp" alt=""></div>
-                <div class="scr-msg">No designation</div>
-                <p class="scr-sub">Register a name in the <a href="/menu/">Terminal</a> to link this device.</p>
-            </div>`;
+            <p class="fail">no designation registered.</p>
+            <p class="dim">register one in the <a href="/menu/" class="bright">terminal</a> [5] to link this device.</p>`;
         return;
     }
 
-    if (view === "idle" || view === "standby") {
-        const standby = view === "standby";
+    if (view === "idle") {
         body.innerHTML = `
-            <div class="scr-view scr-idle">
-                <div class="scr-emblem"><img src="/static/index_logo.webp" alt=""></div>
-                <div class="scr-msg">${standby ? "Device on standby" : "Awaiting prescript"}<span class="cursor"></span></div>
-                <p class="scr-sub">${standby ? "Flip the switch to resume receiving." : "Press Receive, or wait for the City to speak."}</p>
-            </div>`;
+            <p class="dim">queue empty.</p>
+            <p>awaiting the will of the city<span class="cursor"></span></p>`;
         return;
     }
 
+    if (view === "standby") {
+        body.innerHTML = `
+            <p class="fail">device on standby. new prescripts are not being accepted.</p>
+            <p class="dim">select the device status above to resume.</p>`;
+        return;
+    }
+
+    const issued = new Date(item.sent_at);
+    const stakes = typeof item.reward === "number"
+        ? `<span>reward <b>+${item.reward}</b></span><span>penalty <b class="fail">−${item.punishment}</b></span>`
+        : "";
     body.innerHTML = `
-        <div class="scr-view">
-            <span class="scr-serial">PRESCRIPT № ${serialFor(item.token)}</span>
-            <p class="scr-text" id="scrText"></p>
-        </div>`;
+        <div class="pres-head">
+            <span>PRESCRIPT № ${serialFor(item.token)}</span>
+            <span>ISSUED ${Number.isNaN(issued.getTime()) ? "--:--" : hhmm(issued)}</span>
+        </div>
+        <p class="pres-text" id="scrText"></p>
+        <div class="pres-meta">${stakes}<span class="timer" id="screenTimer"></span></div>
+        <div class="textbar" id="segbar" aria-hidden="true"></div>`;
+
     const textEl = $("scrText");
     if (device.decoded.has(item.token)) {
         textEl.textContent = item.text;
     } else {
         device.decoded.add(item.token);
-        decodeTextInto(textEl, item.text, 26);
-    }
-
-    const stakes = $("screenStakes");
-    if (typeof item.reward === "number") {
-        stakes.innerHTML = `<span class="up">▲ +${item.reward}</span><span class="down">▼ −${item.punishment}</span>`;
-    } else {
-        stakes.innerHTML = "";
+        decodeTextInto(textEl, item.text, 24);
     }
     tickTimer();
 }
 
-function renderQueueDots() {
-    const host = $("queueDots");
-    if (!host) return;
-    const now = Date.now();
-    host.innerHTML = device.items.slice(0, 24).map((item, i) => {
-        const urgent = itemExpiry(item) - now < 5 * 60 * 1000;
-        return `<i class="${i === device.index ? "is-current" : ""}${urgent ? " is-urgent" : ""}"></i>`;
-    }).join("");
-}
-
-function renderSegbar(fraction, urgent) {
-    const bar = $("segbar");
-    if (!bar) return;
-    if (!bar.children.length) bar.innerHTML = "<i></i>".repeat(24);
-    const on = Math.ceil(fraction * 24);
-    Array.from(bar.children).forEach((seg, i) => seg.classList.toggle("on", i < on));
-    bar.classList.toggle("is-urgent", !!urgent);
-}
-
 function tickTimer() {
     const timerEl = $("screenTimer");
-    if (!timerEl) return;
     const item = currentItem();
-    if (!item || device.outcome) return;
+    if (!timerEl || !item || device.outcome) return;
 
     const remaining = Math.max(0, itemExpiry(item) - Date.now());
     const urgent = remaining < 5 * 60 * 1000;
-    const mins = Math.floor(remaining / 60000);
-    const secs = Math.floor((remaining % 60000) / 1000);
-    timerEl.textContent = `⏱ ${pad2(mins)}:${pad2(secs)}`;
+    timerEl.textContent = `expires ${pad2(Math.floor(remaining / 60000))}:${pad2(Math.floor((remaining % 60000) / 1000))}`;
     timerEl.classList.toggle("is-urgent", urgent);
-    renderSegbar(remaining / PRESCRIPT_TIME_LIMIT_MS, urgent);
+    renderTextbar($("segbar"), remaining / PRESCRIPT_TIME_LIMIT_MS, { urgent });
 }
 
 function deviceTick() {
-    const clock = $("deviceClock");
-    if (clock) clock.textContent = hhmmss(new Date());
-
     // Drop anything past its time limit — the server auto-files it as ignored on its next sweep,
     // and a tap now would just get a 410, so it shouldn't sit there looking actionable.
     const now = Date.now();
-    const before = device.items.length;
     const keep = device.items.filter(item => itemExpiry(item) > now);
-    if (keep.length !== before) {
+    if (keep.length !== device.items.length) {
         const current = currentItem();
         device.items = keep;
         device.index = Math.max(0, Math.min(keep.indexOf(current), keep.length - 1));
-        addLog(`PRESCRIPT LAPSED`, "is-fail");
+        addLog("prescript lapsed", "is-fail");
         renderScreen();
     }
     tickTimer();
@@ -523,9 +604,8 @@ function deviceTick() {
 // ---- Inbox data ----
 
 function loadInbox() { // Called on load, on a poll, on focus, and when the SW signals a push (pwa.js).
-    if (!$("screenBody")) return;
-    const name = getStoredName().trim();
-    if (!name) {
+    if (!$("queueBody")) return;
+    if (!getStoredName().trim()) {
         renderScreen();
         return;
     }
@@ -547,7 +627,7 @@ function loadInbox() { // Called on load, on a poll, on focus, and when the SW s
                 const keepIdx = current ? incoming.findIndex(i => i.token === current.token) : -1;
                 device.index = keepIdx >= 0 ? keepIdx : 0;
             }
-            if (!device.loadedOnce && incoming.length) addLog(`${incoming.length} PENDING IN QUEUE`);
+            if (!device.loadedOnce && incoming.length) addLog(`${incoming.length} pending in queue`);
             device.loadedOnce = true;
             renderScreen();
         })
@@ -557,20 +637,17 @@ function loadInbox() { // Called on load, on a poll, on focus, and when the SW s
 function announceArrival(count) {
     playAudio();
     buzz([70, 50, 70]);
-    restartClass($("pager"), "is-shaking", 600);
-    restartClass($("screenFlash"), "flash-new", 520);
-    addLog(count > 1 ? `${count} PRESCRIPTS RECEIVED` : "PRESCRIPT RECEIVED");
+    restartClass(document.body, "is-signal", 450);
+    addLog(count > 1 ? `${count} prescripts received` : "prescript received", "is-clear");
 }
 
 function requestPrescript() {
-    const name = getStoredName().trim();
-    if (!name) {
-        toast("Register a designation in the Terminal first", "fail");
+    if (!getStoredName().trim()) {
+        toast("no designation registered", "fail");
         return;
     }
     if (!device.accepting) {
-        toast("Device on standby — flip the switch to receive", "fail");
-        restartClass($("pager"), "is-shaking", 600);
+        toast("device on standby", "fail");
         return;
     }
 
@@ -578,8 +655,7 @@ function requestPrescript() {
     btn.disabled = true;
     btn.classList.add("is-busy");
 
-    // A short floor on the "receiving" state so the scan animation reads as intentional rather
-    // than a flicker on a fast connection.
+    // A short floor on the "receiving" state so it reads as a transmission, not a flicker.
     const minDelay = new Promise(resolve => setTimeout(resolve, REDUCED_MOTION ? 0 : 450));
 
     Promise.all([postWithName("/request_prescript/"), minDelay])
@@ -592,10 +668,10 @@ function requestPrescript() {
                 renderScreen();
             } else if (data.status === "standby") {
                 setDeviceUI(false);
-                toast("Device on standby", "fail");
+                toast("device on standby", "fail");
             }
         })
-        .catch(() => toast("No signal — try again", "fail"))
+        .catch(() => toast("no signal. try again", "fail"))
         .finally(() => {
             btn.disabled = false;
             btn.classList.remove("is-busy");
@@ -610,6 +686,7 @@ function resolveCurrent(action) { // Same token-based /complete/ and /ignore/ en
     const username = getStoredName().trim();
     const usernameQs = username ? `&username=${encodeURIComponent(username)}` : "";
     const url = `${base}?p=${encodeURIComponent(item.token)}${usernameQs}`;
+    const before = currentGrace;
 
     device.busy = true;
     renderScreen();
@@ -626,52 +703,61 @@ function resolveCurrent(action) { // Same token-based /complete/ and /ignore/ en
             // auto-expiry sweep) — either way it's no longer pending, so it leaves the queue.
             if (status === 200) {
                 const delta = typeof data.grace !== "undefined" ? setGrace(data.grace) : 0;
-                showOutcome(action, delta);
+                showOutcome(action, item, before, delta);
             } else {
-                addLog("ALREADY FILED");
-                toast("That prescript was already filed");
+                addLog("already filed");
+                toast("that prescript was already filed");
                 renderScreen();
             }
         })
         .catch(() => {
             device.busy = false;
-            toast("No signal — try again", "fail");
+            toast("no signal. try again", "fail");
             renderScreen();
         });
 }
 
-function showOutcome(action, delta) {
+// Prints the result as terminal output in place of the prescript, then returns to the queue.
+function showOutcome(action, item, before, delta) {
     const clear = action === "complete";
-    const word = clear ? "CLEAR" : "FAILED";
-    const body = $("screenBody");
-
+    const body = $("queueBody");
     device.outcome = true;
     device.view = "";
-    $("screenStakes").innerHTML = "";
-    $("screenTimer").textContent = "";
-    renderSegbar(0, false);
+    renderScreen();
 
-    const deltaText = delta ? `${delta > 0 ? "+" : "−"}${Math.abs(delta)} GRACE` : "";
-    body.innerHTML = `
-        <div class="scr-view scr-outcome${clear ? "" : " scr-outcome--fail"}">
-            <div class="scr-outcome__word" data-text="${word}">${word}</div>
-            <div class="scr-outcome__delta">${deltaText}</div>
-        </div>`;
+    const after = currentGrace;
+    const sign = delta > 0 ? "+" : "−";
+    const lines = [
+        { text: `> ${action} ${serialFor(item.token)}`, cls: "dim" },
+        { html: `  status ....... <span class="tag${clear ? "" : " tag--fail"}">${clear ? "CLEAR" : "FAILED"}</span>` },
+        { text: delta ? `  grace ........ ${before ?? after - delta} -> ${after} (${sign}${Math.abs(delta)})` : "  grace ........ unchanged", cls: clear ? "bright" : "fail" },
+        { text: "  filed to record.", cls: "dim" },
+    ];
+    body.innerHTML = lines.map(() => `<p class="out-line"></p>`).join("");
+    const els = body.querySelectorAll(".out-line");
 
     const status = $("status");
-    if (status) status.textContent = `${word}. ${deltaText}`;
+    if (status) status.textContent = `${clear ? "Clear" : "Failed"}. ${delta ? `${sign}${Math.abs(delta)} grace.` : ""}`;
 
     playAudio();
     buzz(clear ? 40 : [90, 60, 90]);
-    restartClass($("screenFlash"), clear ? "flash-clear" : "flash-fail", 720);
-    if (!clear) restartClass($("pager"), "is-shaking", 600);
-    addLog(`${clear ? "CLEARED" : "FAILED"}${deltaText ? " " + deltaText.replace(" GRACE", "") : ""}`, clear ? "is-clear" : "is-fail");
+    addLog(`${clear ? "cleared" : "failed"}${delta ? ` ${sign}${Math.abs(delta)}` : ""}`, clear ? "is-clear" : "is-fail");
 
-    renderScreen();
-    setTimeout(() => {
+    (async () => {
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.cls) els[i].className = `out-line ${line.cls}`;
+            if (line.html) {
+                els[i].innerHTML = line.html;
+                if (!REDUCED_MOTION) await new Promise(r => setTimeout(r, 160));
+            } else {
+                await typeInto(els[i], line.text, 10);
+            }
+        }
+        await new Promise(r => setTimeout(r, REDUCED_MOTION ? 700 : 1300));
         device.outcome = false;
         renderScreen(true);
-    }, REDUCED_MOTION ? 900 : 1500);
+    })();
 }
 
 function moveIndex(step) {
@@ -692,22 +778,19 @@ function setDeviceUI(accepting) {
         btn.classList.toggle("standby", !accepting);
         btn.setAttribute("aria-pressed", accepting ? "true" : "false");
     }
-    decodeTextInto($("deviceStatusText"), accepting ? "Operational" : "Standby");
+    decodeTextInto($("deviceStatusText"), accepting ? "OPERATIONAL" : "STANDBY");
     renderScreen();
 }
 
 function loadDeviceStatus() {
     return postWithName("/device/status/")
-        .then(data => {
-            device.accepting = data.accepting !== false;
-            setDeviceUI(device.accepting);
-        })
+        .then(data => setDeviceUI(data.accepting !== false))
         .catch(() => { /* offline */ });
 }
 
 function toggleDevice() {
     if (!getStoredName().trim()) {
-        toast("Register a designation in the Terminal first", "fail");
+        toast("no designation registered", "fail");
         return;
     }
     const btn = $("terminal");
@@ -719,14 +802,14 @@ function toggleDevice() {
             if (data.status === "success") {
                 setDeviceUI(data.accepting);
                 playAudio();
-                addLog(data.accepting ? "DEVICE OPERATIONAL" : "STANDBY ENGAGED", data.accepting ? "is-clear" : "is-fail");
+                addLog(data.accepting ? "device operational" : "standby engaged", data.accepting ? "is-clear" : "is-fail");
             }
         })
-        .catch(() => toast("No signal — try again", "fail"))
+        .catch(() => toast("no signal. try again", "fail"))
         .finally(() => { btn.disabled = false; });
 }
 
-// ---- Input: keys, keyboard shortcuts, swipe ----
+// ---- Input: keyboard shortcuts, swipe ----
 
 function pressKey(id) {
     const key = $(id);
@@ -744,10 +827,9 @@ function initDeviceInput() {
     $("terminal").addEventListener("click", toggleDevice);
 
     document.addEventListener("keydown", (event) => {
-        if (event.metaKey || event.ctrlKey || event.altKey) return;
-        const tag = (event.target.tagName || "").toLowerCase();
-        if (tag === "input" || tag === "textarea" || event.target.isContentEditable) return;
-        if (!$("boot").hidden && !$("boot").classList.contains("is-done")) return;
+        if (event.metaKey || event.ctrlKey || event.altKey || isTyping(event.target)) return;
+        const boot = $("boot");
+        if (boot && !boot.hidden && !boot.classList.contains("is-done")) return;
 
         const key = event.key.toLowerCase();
         if (key === "arrowleft" && pressKey("keyPrev")) moveIndex(-1);
@@ -759,14 +841,14 @@ function initDeviceInput() {
         event.preventDefault();
     });
 
-    // Swipe the screen left/right to page through the queue on phones.
-    const screen = $("screen");
+    // Swipe the queue left/right on phones.
+    const queue = $("queue");
     let startX = null, startY = null;
-    screen.addEventListener("touchstart", (e) => {
+    queue.addEventListener("touchstart", (e) => {
         startX = e.touches[0].clientX;
         startY = e.touches[0].clientY;
     }, { passive: true });
-    screen.addEventListener("touchend", (e) => {
+    queue.addEventListener("touchend", (e) => {
         if (startX === null) return;
         const dx = e.changedTouches[0].clientX - startX;
         const dy = e.changedTouches[0].clientY - startY;
@@ -776,26 +858,37 @@ function initDeviceInput() {
 }
 
 // ---- Boot sequence (first visit per session) ----
+// Returns true if it's running; onDone fires once it has cleared (straight away if it didn't run).
 
-function runBoot() {
+function runBoot(onDone) {
     const boot = $("boot");
     let seen = false;
     try { seen = sessionStorage.getItem("wotc_booted") === "1"; } catch (err) { seen = true; }
-    if (!boot || seen || REDUCED_MOTION) return;
+    if (!boot || seen || REDUCED_MOTION) {
+        onDone();
+        return false;
+    }
     try { sessionStorage.setItem("wotc_booted", "1"); } catch (err) { /* ignore */ }
 
     const name = getStoredName().trim();
+    const destination = {
+        role: "> opening standing record_",
+        history: "> opening procuration record_",
+        about: "> decrypting transmission_",
+        menu: "> opening terminal_",
+    }[document.body.dataset.page] || "> awaiting the will of the City_";
     const lines = [
         "INDEX PRESCRIPT DEVICE  rev.3",
         "",
         "> linking to the City ........ OK",
         `> designation ............... ${name ? name.toUpperCase() : "NONE"}`,
         "> grace ledger .............. SYNCED",
-        "> awaiting the will of the City_",
+        destination,
     ];
     const full = lines.join("\n");
     const out = $("bootLines");
     boot.hidden = false;
+    document.body.classList.add("is-booting");
 
     let i = 0;
     let finished = false;
@@ -804,8 +897,10 @@ function runBoot() {
         finished = true;
         out.textContent = full;
         boot.classList.add("is-done");
-        setTimeout(() => { boot.hidden = true; }, 500);
-        addLog("DEVICE LINKED", "is-clear");
+        setTimeout(() => { boot.hidden = true; }, 450);
+        addLog("device linked", "is-clear");
+        document.body.classList.remove("is-booting");
+        onDone();
     };
 
     const type = () => {
@@ -819,15 +914,14 @@ function runBoot() {
 
     boot.addEventListener("click", finish);
     document.addEventListener("keydown", finish, { once: true });
+    return true;
 }
 
 function initHome() {
-    if (!$("pager")) return;
-    runBoot();
+    if (!$("queueBody")) return;
     renderLog();
     initDeviceInput();
     renderScreen(true);
-    deviceTick();
     setInterval(() => { if (!document.hidden) deviceTick(); }, 1000);
 
     loadDeviceStatus();
@@ -841,90 +935,61 @@ function initHome() {
 // ROLE
 // =============================================================================================
 
-const LADDER_NODES = [
-    { label: "Turncoat", at: "< 0", pos: 0, min: -Infinity },
-    { label: "Civilian", at: "0", pos: 25, min: 0 },
-    { label: "Proselyte", at: "51", pos: 50, min: 51 },
-    { label: "Proxy · Messenger", at: "126", pos: 75, min: 126 },
-    { label: "Weaver", at: "201", pos: 100, min: 201 },
-];
-
-function renderLadder(grace) {
-    const nodes = $("ladderNodes");
-    if (!nodes) return;
-    const n = toNumber(grace) || 0;
-    if (!nodes.children.length) {
-        nodes.innerHTML = LADDER_NODES.map(node =>
-            `<li class="ladder__node" style="left:${node.pos}%"><b>${node.at}</b><span>${node.label}</span></li>`
-        ).join("");
-    }
-    Array.from(nodes.children).forEach((li, i) => li.classList.toggle("is-reached", n >= LADDER_NODES[i].min));
-
-    const pos = ladderPosition(n);
-    // Let the first paint land at 0 so the fill visibly sweeps up to the real value.
-    requestAnimationFrame(() => {
-        $("ladderFill").style.width = `${pos}%`;
-        $("ladderMarker").style.left = `${pos}%`;
-    });
-    $("ladderMarkerLabel").textContent = String(n);
+function showSeal(image, caption, sealed) {
+    const img = $("roleImage");
+    if (!img) return;
+    if (!img.src.endsWith(image)) img.src = image;
+    $("sealCaption").textContent = caption;
+    $("sealFrame").classList.toggle("is-sealed", !!sealed);
 }
 
 function updateRoleUI(score) {
     const roleInfo = getRoleForGrace(score);
     const progress = rankProgress(score);
+    const n = toNumber(score);
 
     const roleNameEl = $("roleName");
-    if (roleNameEl && roleNameEl.textContent !== roleInfo.name) decodeTextInto(roleNameEl, roleInfo.name);
+    if (roleNameEl && roleNameEl.textContent !== roleInfo.name.toUpperCase()) decodeTextInto(roleNameEl, roleInfo.name.toUpperCase());
 
-    const roleScoreEl = $("roleScore");
-    if (roleScoreEl) roleScoreEl.textContent = String(score);
+    $("roleScore").textContent = String(score);
+    $("roleDescription").textContent = roleInfo.description;
+    $("roleNext").textContent = progress.nextName ? `${progress.nextName.toUpperCase()} in ${progress.toNext}` : "none. apex reached";
+    renderTextbar($("roleBar"), progress.pct, { suffix: ` ${pad2(Math.round(progress.pct * 100))}%` });
 
-    const roleDescEl = $("roleDescription");
-    if (roleDescEl) roleDescEl.textContent = roleInfo.description;
+    showSeal(roleInfo.image, `CURRENT · ${roleInfo.name.toUpperCase()}`);
+    $("roleImage").alt = `${roleInfo.name} seal`;
 
-    const roleImageEl = $("roleImage");
-    if (roleImageEl && !roleImageEl.src.endsWith(roleInfo.image)) {
-        roleImageEl.src = roleInfo.image;
-        roleImageEl.alt = `${roleInfo.name} seal`;
-    }
-
-    const roleNext = $("roleNext");
-    if (roleNext) roleNext.textContent = progress.nextName ? `${progress.nextName} · ${progress.toNext} to go` : "Apex reached";
-
-    renderLadder(score);
-
-    const n = toNumber(score);
-    document.querySelectorAll(".role-card").forEach((card, i) => {
-        const role = card.dataset.role;
+    document.querySelectorAll(".role-card").forEach(row => {
+        const role = row.dataset.role;
         const threshold = ROLE_THRESHOLDS[role] ?? Infinity;
         // Turncoat is a state you fall into rather than a rank you earn — it only "unlocks" while
         // you're actually in it.
         const unlocked = role === "Turncoat" ? n <= -1 : n >= threshold;
-        card.classList.toggle("unlocked", unlocked);
-        card.classList.toggle("locked", !unlocked);
-        card.classList.toggle("active", role === roleInfo.name);
-        card.style.setProperty("--i", i);
-        const label = card.querySelector(".role-card__lock-label");
-        if (label) label.textContent = role === "Turncoat" ? "Sealed" : `Requires ${threshold} grace`;
+        const active = role === roleInfo.name;
+        row.classList.toggle("unlocked", unlocked);
+        row.classList.toggle("locked", !unlocked);
+        row.classList.toggle("active", active);
+        row.querySelector(".levels__status").textContent = active ? "◀ CURRENT" : unlocked ? "CLEARED" : role === "Turncoat" ? "SEALED" : "LOCKED";
     });
 }
 
-function initRoleTilt() {
-    if (REDUCED_MOTION || !window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
-    document.querySelectorAll(".role-card").forEach(card => {
-        card.addEventListener("pointermove", (e) => {
-            const r = card.getBoundingClientRect();
-            const x = (e.clientX - r.left) / r.width;
-            const y = (e.clientY - r.top) / r.height;
-            card.style.setProperty("--ry", `${(x - 0.5) * 10}deg`);
-            card.style.setProperty("--rx", `${(0.5 - y) * 10}deg`);
-            card.style.setProperty("--gx", `${x * 100}%`);
-            card.style.setProperty("--gy", `${y * 100}%`);
-        });
-        card.addEventListener("pointerleave", () => {
-            card.style.setProperty("--rx", "0deg");
-            card.style.setProperty("--ry", "0deg");
-        });
+function initRolePreview() {
+    const rows = document.querySelectorAll(".role-card");
+    if (!rows.length) return;
+    const restore = () => {
+        const info = getRoleForGrace(currentGrace ?? 0);
+        showSeal(info.image, `CURRENT · ${info.name.toUpperCase()}`);
+    };
+    rows.forEach(row => {
+        const preview = () => {
+            const name = row.dataset.role.toUpperCase();
+            if (row.classList.contains("unlocked")) showSeal(row.dataset.img, `PREVIEW · ${name}`);
+            else showSeal(row.dataset.img, `${name} · LOCKED`, true);
+        };
+        row.addEventListener("pointerenter", preview);
+        row.addEventListener("focus", preview);
+        row.addEventListener("pointerleave", restore);
+        row.addEventListener("blur", restore);
     });
 }
 
@@ -938,9 +1003,9 @@ function dayLabel(date) {
     const today = new Date();
     const yesterday = new Date();
     yesterday.setDate(today.getDate() - 1);
-    if (date.toDateString() === today.toDateString()) return "Today";
-    if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
-    return date.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+    if (date.toDateString() === today.toDateString()) return "TODAY";
+    if (date.toDateString() === yesterday.toDateString()) return "YESTERDAY";
+    return date.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }).toUpperCase();
 }
 
 function renderHistory() {
@@ -951,34 +1016,40 @@ function renderHistory() {
 
     if (!items.length) {
         const message = !name
-            ? 'No designation on record. Register one in the <a href="/menu/">Terminal</a>.'
+            ? 'no designation on record. register one in the <a href="/menu/" class="bright">terminal</a> [5].'
             : historyState.items.length
-                ? "Nothing matches this filter."
-                : "The record is empty. Complete or ignore a prescript to begin it.";
-        host.innerHTML = `<div class="empty-state is-static"><span class="empty-state__ring" aria-hidden="true"></span><p>${message}</p></div>`;
+                ? "no entries match this filter."
+                : "record empty. complete or ignore a prescript to begin it.";
+        host.innerHTML = `<p class="dim">${message}</p>`;
         return;
     }
 
     let html = "";
     let lastDay = "";
-    items.forEach((item, i) => {
+    items.forEach(item => {
         const date = new Date(item.created_at);
         const valid = !Number.isNaN(date.getTime());
-        const day = valid ? dayLabel(date) : "Undated";
+        const day = valid ? dayLabel(date) : "UNDATED";
         if (day !== lastDay) {
-            html += `<div class="timeline__day">${escapeHTML(day)}</div>`;
+            html += `<div class="rule"><span>${escapeHTML(day)}</span></div>`;
             lastDay = day;
         }
-        const time = valid ? `${pad2(date.getHours())}:${pad2(date.getMinutes())}` : "--:--";
         const completed = item.action === "completed";
         html += `
-            <div class="entry entry--${completed ? "completed" : "ignored"}" style="--i:${Math.min(i, 20)}">
-                <span class="entry__time">${time}</span>
-                <span class="entry__tag">${completed ? "CLR" : "IGN"}</span>
+            <div class="entry entry--${completed ? "completed" : "ignored"}">
+                <span class="entry__time">${valid ? hhmm(date) : "--:--"}</span>
+                <span class="entry__tag">${completed ? "[CLR]" : "[IGN]"}</span>
                 <span class="entry__text">${escapeHTML(item.text)}</span>
             </div>`;
     });
     host.innerHTML = html;
+
+    if (!REDUCED_MOTION) {
+        Array.from(host.children).forEach((el, i) => {
+            el.style.setProperty("--d", `${Math.min(i * 22, 600)}ms`);
+            el.classList.add("pl");
+        });
+    }
 }
 
 function renderHistoryStats(totals) {
@@ -994,17 +1065,13 @@ function renderHistoryStats(totals) {
         streak++;
     }
 
-    animateNumber($("statTotal"), 0, total);
-    animateNumber($("statCompleted"), 0, completed);
-    animateNumber($("statIgnored"), 0, ignored);
-    animateNumber($("statRate"), 0, rate);
-    animateNumber($("statStreak"), 0, streak);
-
-    const ring = $("statRateRing");
-    if (ring) requestAnimationFrame(() => { ring.style.strokeDashoffset = String(113.1 * (1 - rate / 100)); });
-
-    const count = $("recordCount");
-    if (count) count.textContent = `${total} ${total === 1 ? "ENTRY" : "ENTRIES"}`;
+    animateNumber($("statTotal"), 0, total, 600);
+    animateNumber($("statCompleted"), 0, completed, 600);
+    animateNumber($("statIgnored"), 0, ignored, 600);
+    animateNumber($("statRate"), 0, rate, 600);
+    animateNumber($("statStreak"), 0, streak, 600);
+    renderTextbar($("rateBar"), rate / 100);
+    $("recordCount").textContent = String(total);
 }
 
 function loadHistory() {
@@ -1035,7 +1102,7 @@ function loadHistory() {
             renderHistory();
         })
         .catch(() => {
-            $("history").innerHTML = '<div class="empty-state is-static"><span class="empty-state__ring"></span><p>No signal. The record could not be read.</p></div>';
+            $("history").innerHTML = '<p class="fail">no signal. the record could not be read.</p>';
         });
 }
 
@@ -1045,17 +1112,23 @@ function loadHistory() {
 
 function initAbout() {
     const tabs = document.querySelectorAll(".tabs__btn");
-    tabs.forEach(tab => {
-        tab.addEventListener("click", () => {
-            tabs.forEach(t => {
-                const active = t === tab;
-                t.classList.toggle("is-active", active);
-                t.setAttribute("aria-selected", active ? "true" : "false");
-                const panel = $(t.getAttribute("aria-controls"));
-                if (panel) panel.hidden = !active;
-            });
+    const select = (tab) => {
+        tabs.forEach(t => {
+            const active = t === tab;
+            t.classList.toggle("is-active", active);
+            t.setAttribute("aria-selected", active ? "true" : "false");
+            const panel = $(t.getAttribute("aria-controls"));
+            if (panel) panel.hidden = !active;
         });
-    });
+    };
+    tabs.forEach(tab => tab.addEventListener("click", () => select(tab)));
+    if (tabs.length) {
+        document.addEventListener("keydown", (event) => {
+            if (isTyping(event.target) || event.metaKey || event.ctrlKey || event.altKey) return;
+            if (event.key === "a") select(tabs[0]);
+            if (event.key === "b" && tabs[1]) select(tabs[1]);
+        });
+    }
 
     const reveals = document.querySelectorAll(".reveal");
     if (!reveals.length) return;
@@ -1069,7 +1142,7 @@ function initAbout() {
             entry.target.classList.add("is-visible");
             observer.unobserve(entry.target);
         });
-    }, { rootMargin: "0px 0px -8% 0px" });
+    }, { rootMargin: "0px 0px -6% 0px" });
     reveals.forEach(el => observer.observe(el));
 }
 
@@ -1085,51 +1158,36 @@ function initTerminal() {
         const input = $("usernameInput");
         const name = input.value.trim();
         if (!name) {
-            toast("Enter a designation first", "fail");
+            toast("enter a designation first", "fail");
             input.focus();
             return;
         }
         const changed = name !== getStoredName().trim();
         setStoredName(name);
-        restartClass(input.closest(".field-row"), "is-saved", 900);
+        restartClass(form, "is-saved", 700);
         playAudio();
-        toast(changed ? `Designation registered: ${name}` : "Designation unchanged");
+        toast(changed ? `designation registered: ${name}` : "designation unchanged");
         // Re-file this browser's push subscription under the new name (pwa.js).
         if (changed && typeof ensurePushRegistered === "function") ensurePushRegistered();
     });
 }
 
 // =============================================================================================
-// Global
-// =============================================================================================
-
-function initBackdrop() {
-    if (REDUCED_MOTION || !window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
-    let queued = false, x = 0, y = 0;
-    window.addEventListener("pointermove", (e) => {
-        x = e.clientX; y = e.clientY;
-        if (queued) return;
-        queued = true;
-        requestAnimationFrame(() => {
-            document.documentElement.style.setProperty("--mx", `${x}px`);
-            document.documentElement.style.setProperty("--my", `${y}px`);
-            queued = false;
-        });
-    }, { passive: true });
-}
 
 function initPage() {
     updateNameUI();
-    document.querySelectorAll("[data-decode]").forEach(el => decodeTextInto(el, el.textContent.trim(), 34));
-
-    initBackdrop();
+    initPageTransitions();
+    initClock();
     initSoundToggle();
     initHome();
-    initRoleTilt();
+    initRolePreview();
     loadHistory();
     initAbout();
     initTerminal();
     loadScore();
+
+    // On the first visit of a session the boot sequence plays first; the screen prints after it.
+    runBoot(printScreen);
 }
 
 initPage();
