@@ -5,25 +5,24 @@
 // whole app ("/") so it can intercept navigations to /home/, /menu/, /history/, etc. and receive
 // push events no matter which page (or no page) is currently open.
 
-// Bump this whenever SHELL_ASSETS content changes (script.js, style.css, pwa.js, ...). A browser
-// only re-runs install/activate when sw.js's OWN bytes change — editing a cached asset alone is
-// invisible to it, so an already-installed phone keeps serving the stale cached copy forever
-// (confirmed live: the Index Device toggle shipped in script.js with no version bump here, and
-// zero /device/toggle/ requests ever reached the server from any phone as a result). skipWaiting()
-// + clients.claim() below mean a version bump takes effect on next load, no reinstall needed.
-const CACHE_NAME = "wotc-shell-v2";
+// Bump this whenever this file's caching behaviour changes. Pages now reference static files
+// through Django's {% static %} tag, which in production yields content-hashed URLs
+// (style.3f9a1c2b7d4e.css) — a changed file gets a new URL, so a stale cached copy can't be served
+// for it any more. That's what used to bite here: an edited script.js kept being served from this
+// cache under its unchanging name until this version string was bumped by hand.
+const CACHE_NAME = "wotc-shell-v3";
 
-// A small, deliberately conservative app-shell cache — just enough that the terminal UI itself
-// still renders if you're offline or the network hiccups. Prescript/grace/history data always
-// comes from the network (never cached) since it has to stay live.
+// Precached so the device itself still renders offline on a first cold start. Everything else under
+// /static/ is cached at runtime the first time it's fetched (see the fetch handler).
 const SHELL_ASSETS = [
-    "/static/style.css",
-    "/static/script.js",
-    "/static/pwa.js",
+    "/static/index_logo.webp",
     "/static/detailed_index_logo.webp",
     "/static/limbus_index_beeper.mp3",
     "/static/manifest.webmanifest",
 ];
+
+// Matches WhiteNoise/ManifestStaticFilesStorage's hashed names, e.g. script.0123456789ab.js
+const HASHED_ASSET = /\.[0-9a-f]{12}\.[a-z0-9]+$/i;
 
 self.addEventListener("install", (event) => {
     event.waitUntil(
@@ -43,6 +42,14 @@ self.addEventListener("activate", (event) => {
     );
 });
 
+function cacheResponse(request, response) {
+    if (response && response.ok) {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+    }
+    return response;
+}
+
 self.addEventListener("fetch", (event) => {
     const { request } = event;
     if (request.method !== "GET") return;  // never intercept POSTs (complete/ignore/subscribe/etc.)
@@ -50,23 +57,31 @@ self.addEventListener("fetch", (event) => {
     const url = new URL(request.url);
     if (url.origin !== self.location.origin) return;
 
-    // App-shell assets: cache-first, so the UI itself still loads offline.
-    if (SHELL_ASSETS.includes(url.pathname)) {
-        event.respondWith(
-            caches.match(request).then((cached) => cached || fetch(request))
-        );
+    if (url.pathname.startsWith("/static/")) {
+        if (HASHED_ASSET.test(url.pathname) || SHELL_ASSETS.includes(url.pathname)) {
+            // Immutable (hashed) or deliberately precached: cache-first.
+            event.respondWith(
+                caches.match(request).then((cached) => cached || fetch(request).then((res) => cacheResponse(request, res)))
+            );
+        } else {
+            // Unhashed (local dev, icons): network-first so edits show up, cache as offline fallback.
+            event.respondWith(
+                fetch(request).then((res) => cacheResponse(request, res)).catch(() => caches.match(request))
+            );
+        }
         return;
     }
 
     // Everything else (page navigations, /get_score/, /get_history/, etc.): network-first, no
     // caching — this data has to stay live. A failed navigation gets a minimal inline offline
-    // notice instead of the browser's own error page (no full-page cache to fall back to here).
+    // notice instead of the browser's own error page.
     if (request.mode === "navigate") {
         event.respondWith(
             fetch(request).catch(() => new Response(
-                "<!DOCTYPE html><meta charset='utf-8'><title>Offline</title>" +
-                "<body style='background:#000;color:#86bada;font-family:monospace;padding:2rem'>" +
-                "No connection. The City is still recording — try again once you're back online.</body>",
+                "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Offline</title>" +
+                "<body style='margin:0;min-height:100vh;display:grid;place-items:center;background:#02060b;color:#86bada;font-family:monospace;padding:2rem;text-align:center'>" +
+                "<div><p style='letter-spacing:.3em;font-size:12px;opacity:.6'>INDEX DEVICE // NO SIGNAL</p>" +
+                "<p>The City is still recording. Try again once you're back online.</p></div></body>",
                 { status: 503, headers: { "Content-Type": "text/html" } }
             ))
         );

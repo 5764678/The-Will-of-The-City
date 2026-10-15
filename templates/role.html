@@ -5,7 +5,9 @@
 {% block main_class %}page--role{% endblock %}
 
 {% block content %}
-<section class="role-hero panel" aria-labelledby="roleName">
+<section class="role-hero term" aria-labelledby="roleName">
+    <div class="term__bar"><span class="term__title">INDEX://STANDING</span><span class="term__meta" id="roleBadge">VERIFIED</span></div>
+    <div class="role-hero__inner">
     <div class="role-hero__seal">
         <span class="role-hero__orbit" aria-hidden="true"></span>
         <img id="roleImage" src="{% static 'role_placeholder.svg' %}" alt="Role seal" class="role-hero__img">
@@ -27,6 +29,7 @@
             </div>
         </div>
     </div>
+    </div>
 </section>
 
 <!-- Rank ladder: one node per threshold, with a marker at the current grace. Built by
@@ -39,7 +42,7 @@
     <ol class="ladder__nodes" id="ladderNodes"></ol>
 </section>
 
-<h2 class="section-title">Ranks of the City</h2>
+<h2 class="section-title">Clearance levels</h2>
 <section class="role-grid">
     <article class="role-card" data-role="Turncoat" tabindex="0">
         <div class="role-card__image"><img src="{% static 'role_turncoat.svg' %}" alt="" loading="lazy"></div>

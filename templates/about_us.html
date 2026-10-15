@@ -7,7 +7,7 @@
 {% block content %}
 <header class="page-head">
     <p class="eyebrow">Supplemental record</p>
-    <h1>About the Prescripts</h1>
+    <h1 data-decode>About the Prescripts</h1>
     <p class="page-head__sub">Additional project information and authorship notes.</p>
 </header>
 
@@ -16,7 +16,8 @@
     <button type="button" role="tab" class="tabs__btn" aria-selected="false" aria-controls="docNotes" id="tabNotes">Project notes</button>
 </div>
 
-<article class="letter panel" id="docLetter" role="tabpanel" aria-labelledby="tabLetter">
+<article class="letter term" id="docLetter" role="tabpanel" aria-labelledby="tabLetter">
+    <div class="term__bar"><span class="term__title">INDEX://TRANSMISSION/0001</span><span class="term__meta">DECRYPTED</span></div>
     <span class="letter__seal" aria-hidden="true"><img src="{% static 'index_logo.webp' %}" alt=""></span>
     <dl class="letter__head">
         <div><dt>From</dt><dd>The Index</dd></div>
@@ -47,7 +48,8 @@
     <p class="letter__sign reveal">— The Index</p>
 </article>
 
-<article class="letter panel" id="docNotes" role="tabpanel" aria-labelledby="tabNotes" hidden>
+<article class="letter term" id="docNotes" role="tabpanel" aria-labelledby="tabNotes" hidden>
+    <div class="term__bar"><span class="term__title">INDEX://ARCHIVE/SUPPLEMENTAL</span><span class="term__meta">PUBLIC</span></div>
     <dl class="letter__head">
         <div><dt>Archive</dt><dd>Supplemental Record</dd></div>
         <div><dt>Classification</dt><dd>Public Reference</dd></div>

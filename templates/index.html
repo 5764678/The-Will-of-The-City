@@ -5,55 +5,98 @@
 {% block main_class %}page--home{% endblock %}
 
 {% block content %}
-<section class="device panel" aria-labelledby="deviceTitle">
-    <img src="{% static 'index_logo.webp' %}" alt="" class="device__watermark" width="363" height="426">
+<div class="home-layout">
+    <!-- The Index beeping device. One prescript on screen at a time; the inbox (every unresolved
+         prescript, from get_inbox / request_prescript in views.py) is paged through with the ◀ ▶
+         keys. Everything inside .screen is rendered by script.js (renderScreen). -->
+    <section class="pager" id="pager" aria-labelledby="pagerTitle">
+        <h1 id="pagerTitle" class="visually-hidden">Index prescript device</h1>
 
-    <div class="device__head">
-        <!-- The Index Device toggle — flips between Operational (accepting new prescripts) and
-             Standby (see toggleDevice in script.js and accepting_prescripts on UserProfile). -->
-        <button id="terminal" type="button" class="device-switch" aria-pressed="true">
-            <span class="device-switch__led" aria-hidden="true"></span>
-            <span class="device-switch__label">Index Device</span>
-            <span class="device-switch__state" id="deviceStatusText">Operational</span>
-        </button>
-        <div class="device__clock" aria-label="City time">
-            <span class="device__clock-label">City time</span>
-            <span id="deviceClock">--:--:--</span>
+        <div class="pager__top">
+            <span class="pager__led" id="pagerLed" aria-hidden="true"></span>
+            <span class="pager__brand">INDEX</span>
+            <span class="pager__grille" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+
+            <!-- Index Device toggle — flips between Operational (accepting new prescripts) and
+                 Standby (see toggleDevice in script.js and accepting_prescripts on UserProfile). -->
+            <button id="terminal" type="button" class="pwr-switch" aria-pressed="true" title="Toggle Operational / Standby">
+                <span class="pwr-switch__track" aria-hidden="true"><span class="pwr-switch__knob"></span></span>
+                <span class="pwr-switch__text"><span class="visually-hidden">Index Device: </span><span id="deviceStatusText">Operational</span></span>
+            </button>
         </div>
-    </div>
 
-    <h1 id="deviceTitle" class="device__greeting"><span id="userGreeting">Citizen</span></h1>
+        <div class="screen" id="screen">
+            <div class="screen__bar">
+                <span class="screen__state" id="screenState">● LINKED</span>
+                <span id="deviceClock">--:--:--</span>
+                <span class="screen__counter" id="screenCounter">MSG 00/00</span>
+            </div>
 
-    <div class="grace-readout">
-        <div class="grace-readout__label">Grace</div>
-        <div class="grace-readout__value" id="grace" data-value="{{ grace }}">{{ grace }}</div>
-        <div class="grace-readout__delta" id="graceDelta" aria-hidden="true"></div>
-    </div>
+            <div class="screen__body" id="screenBody" aria-live="polite">
+                <!-- idle / prescript / outcome views swapped in by script.js -->
+            </div>
 
-    <a href="/role/" class="rank-progress" id="rankProgress">
-        <span class="rank-progress__row">
-            <span class="rank-progress__rank" id="rankName">Civilian</span>
-            <span class="rank-progress__next" id="rankNext">&nbsp;</span>
-        </span>
-        <span class="meter"><span class="meter__fill" id="rankBar"></span></span>
-    </a>
+            <div class="screen__foot" id="screenFoot">
+                <span class="screen__stakes" id="screenStakes"></span>
+                <span class="screen__timer" id="screenTimer"></span>
+            </div>
+            <div class="segbar" id="segbar" aria-hidden="true"></div>
 
-    <button id="requestPrescriptBtn" type="button" class="btn btn--primary btn--xl">
-        <span class="btn__label">Receive Prescript</span>
-    </button>
+            <div class="screen__flash" id="screenFlash" aria-hidden="true"></div>
+        </div>
 
-    <div id="status" class="status-line" role="status" aria-live="polite"></div>
-</section>
+        <div class="pager__keys" role="group" aria-label="Device keys">
+            <button type="button" class="key key--nav" id="keyPrev" aria-label="Previous prescript" title="Previous (←)">◀</button>
+            <button type="button" class="key key--clear" id="keyComplete" title="Complete (C)">Complete</button>
+            <button type="button" class="key key--fail" id="keyIgnore" title="Ignore (I)">Ignore</button>
+            <button type="button" class="key key--nav" id="keyNext" aria-label="Next prescript" title="Next (→)">▶</button>
+        </div>
 
-<section class="inbox-section" aria-labelledby="inboxTitle">
-    <div class="section-head">
-        <h2 id="inboxTitle">Inbox</h2>
-        <span class="count-badge" id="inboxCount" hidden>0</span>
-    </div>
+        <button id="requestPrescriptBtn" type="button" class="key key--receive" title="Receive (R)">
+            <span class="key--receive__ring" aria-hidden="true"></span>
+            <span>Receive Prescript</span>
+        </button>
 
-    <!-- Inbox: every unresolved prescript (scheduled push or self-requested) shows here as its
-         own card, newest on top. Populated client-side by loadInbox() in script.js — see
-         get_inbox/request_prescript in views.py. -->
-    <div id="inbox" class="inbox"></div>
-</section>
+        <div class="pager__queue" id="queueDots" aria-hidden="true"></div>
+        <p class="pager__hint">← → browse · C complete · I ignore · R receive</p>
+    </section>
+
+    <aside class="readouts">
+        <div class="panel lcd">
+            <div class="lcd__label">Designation</div>
+            <div class="lcd__value lcd__value--name" id="userGreeting">Citizen</div>
+        </div>
+
+        <div class="panel lcd lcd--grace">
+            <div class="lcd__label">Grace</div>
+            <div class="lcd__value" id="grace" data-value="{{ grace }}">{{ grace }}</div>
+            <div class="grace-delta" id="graceDelta" aria-hidden="true"></div>
+        </div>
+
+        <a href="/role/" class="panel lcd rank-progress" id="rankProgress">
+            <div class="lcd__label">Standing</div>
+            <div class="rank-progress__row">
+                <span class="rank-progress__rank" id="rankName">Civilian</span>
+                <span class="rank-progress__next" id="rankNext">&nbsp;</span>
+            </div>
+            <span class="meter"><span class="meter__fill" id="rankBar"></span></span>
+        </a>
+
+        <div class="panel lcd log">
+            <div class="lcd__label">Device log</div>
+            <ol class="log__lines" id="deviceLog"></ol>
+        </div>
+
+        <div id="status" class="visually-hidden" role="status" aria-live="polite"></div>
+    </aside>
+</div>
+
+{% endblock %}
+
+{% block overlay %}
+<!-- First-visit-per-session boot sequence (see runBoot in script.js). Tap/any key skips it. -->
+<div class="boot" id="boot" hidden>
+    <img src="{% static 'index_logo.webp' %}" alt="" class="boot__logo" width="120" height="141">
+    <pre class="boot__lines" id="bootLines"></pre>
+</div>
 {% endblock %}

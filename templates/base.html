@@ -95,6 +95,8 @@
     </nav>
     {% endwith %}
 
+    {% block overlay %}{% endblock %}
+
     <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 
     <audio id="beep" src="{% static 'limbus_index_beeper.mp3' %}" preload="auto"></audio>

@@ -6,7 +6,7 @@
 {% block content %}
 <header class="page-head">
     <p class="eyebrow">Record of procurations</p>
-    <h1 id="historyHeader">History</h1>
+    <h1 id="historyHeader" data-decode>History</h1>
 </header>
 
 <section class="stats" aria-label="Summary">
@@ -22,10 +22,13 @@
         <span class="stat__label">Ignored</span>
         <span class="stat__value" id="statIgnored">0</span>
     </div>
-    <div class="stat panel">
+    <div class="stat panel stat--ring">
+        <svg class="ring" viewBox="0 0 44 44" aria-hidden="true">
+            <circle class="ring__track" cx="22" cy="22" r="18"/>
+            <circle class="ring__fill" id="statRateRing" cx="22" cy="22" r="18"/>
+        </svg>
         <span class="stat__label">Compliance</span>
         <span class="stat__value"><span id="statRate">0</span>%</span>
-        <span class="meter meter--thin"><span class="meter__fill" id="statRateBar"></span></span>
     </div>
     <div class="stat panel">
         <span class="stat__label">Current streak</span>
@@ -33,16 +36,27 @@
     </div>
 </section>
 
-<div class="segmented" role="tablist" aria-label="Filter history">
-    <button type="button" role="tab" class="segmented__btn is-active" aria-selected="true" data-filter="all">All</button>
-    <button type="button" role="tab" class="segmented__btn" aria-selected="false" data-filter="completed">Cleared</button>
-    <button type="button" role="tab" class="segmented__btn" aria-selected="false" data-filter="ignored">Ignored</button>
-</div>
-
-<div id="history" class="timeline">
-    <div class="empty-state" id="historyEmpty">
-        <span class="empty-state__ring" aria-hidden="true"></span>
-        <p>Reading the record…</p>
+<section class="term">
+    <div class="term__bar">
+        <span class="term__title">INDEX://RECORD/<span id="recordOwner">CITIZEN</span></span>
+        <span class="term__meta" id="recordCount">0 ENTRIES</span>
     </div>
-</div>
+
+    <div class="term__prompt">
+        <span class="term__caret">&gt;</span>
+        <span>query --filter</span>
+        <div class="segmented" role="tablist" aria-label="Filter history">
+            <button type="button" role="tab" class="segmented__btn is-active" aria-selected="true" data-filter="all">all</button>
+            <button type="button" role="tab" class="segmented__btn" aria-selected="false" data-filter="completed">cleared</button>
+            <button type="button" role="tab" class="segmented__btn" aria-selected="false" data-filter="ignored">ignored</button>
+        </div>
+    </div>
+
+    <div id="history" class="timeline">
+        <div class="empty-state" id="historyEmpty">
+            <span class="empty-state__ring" aria-hidden="true"></span>
+            <p>Reading the record<span class="cursor"></span></p>
+        </div>
+    </div>
+</section>
 {% endblock %}

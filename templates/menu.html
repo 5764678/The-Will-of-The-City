@@ -6,7 +6,8 @@
 
 {% block content %}
 <div class="terminal-grid">
-    <section class="panel identity">
+    <section class="term identity">
+        <div class="term__bar"><span class="term__title">INDEX://TERMINAL/IDENTITY</span><span class="term__meta" id="identityState">UNREGISTERED</span></div>
         <div class="identity__seal">
             <img src="{% static 'detailed_index_logo.webp' %}" alt="The Index emblem" class="identity__logo">
         </div>
@@ -35,7 +36,7 @@
     </section>
 
     <section class="nav-tiles" aria-label="Sections">
-        <h1 class="section-title">Terminal</h1>
+        <h1 class="section-title" data-decode>Terminal</h1>
         {% for link in menu_links %}
             <a href="{{ link.url }}" class="nav-tile" style="--i: {{ forloop.counter0 }}">
                 <span class="nav-tile__index">0{{ forloop.counter }}</span>

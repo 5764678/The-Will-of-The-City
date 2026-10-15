@@ -96,6 +96,19 @@ instead of not arriving at all.
    jobs the way GitHub Actions' scheduler does. Two independent schedulers hitting the same
    idempotent endpoint is pure redundancy — whichever lands first wins for that sweep.
 
+### cron-job.org settings that matter
+
+- **Interval: every 5 minutes.** The endpoint decides for itself what's due (`SWEEP_INTERVAL`,
+  15 minutes), so a shorter heartbeat never sends extra prescripts. It does keep Render's free
+  instance awake (it sleeps after 15 idle minutes), which avoids the cold starts that cause the
+  next two problems.
+- **Timeout:** a cold start can exceed cron-job.org's default 30s. A timeout counts as a failed run,
+  and cron-job.org **disables a job automatically after repeated failures**. If the job shows as
+  disabled in the dashboard, that's why. Re-enable it and shorten the interval.
+- **Header:** `X-Notify-Secret` must match `NOTIFY_TRIGGER_SECRET`, otherwise every run is a 403.
+- `{"status": "nothing_due"}` and `{"status": "no_recipients"}` are both normal 200 responses, not
+  errors.
+
 ## Credits
 Project Moon inspiration
 Community image sources
