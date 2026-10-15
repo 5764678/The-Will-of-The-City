@@ -1,55 +1,59 @@
-<!DOCTYPE html>
-<html>
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Prescripts · The Will of The City{% endblock %}
+{% block page_id %}home{% endblock %}
+{% block main_class %}page--home{% endblock %}
 
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>The Will of The City</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+{% block content %}
+<section class="device panel" aria-labelledby="deviceTitle">
+    <img src="{% static 'index_logo.webp' %}" alt="" class="device__watermark" width="363" height="426">
 
-    <!-- PWA: installable manifest, icons, and iOS-specific meta (iOS ignores the manifest's
-         icons/theme-color, hence the separate apple-* tags) -->
-    <link rel="manifest" href="/static/manifest.webmanifest">
-    <meta name="theme-color" content="#000000">
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
-    <link rel="shortcut icon" href="/static/icons/favicon.ico">
-    <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Will of the City">
-</head>
+    <div class="device__head">
+        <!-- The Index Device toggle — flips between Operational (accepting new prescripts) and
+             Standby (see toggleDevice in script.js and accepting_prescripts on UserProfile). -->
+        <button id="terminal" type="button" class="device-switch" aria-pressed="true">
+            <span class="device-switch__led" aria-hidden="true"></span>
+            <span class="device-switch__label">Index Device</span>
+            <span class="device-switch__state" id="deviceStatusText">Operational</span>
+        </button>
+        <div class="device__clock" aria-label="City time">
+            <span class="device__clock-label">City time</span>
+            <span id="deviceClock">--:--:--</span>
+        </div>
+    </div>
 
-<body>
-    <a href="/menu/" class="menu-toggle" aria-label="Open menu">☰</a>
+    <h1 id="deviceTitle" class="device__greeting"><span id="userGreeting">Citizen</span></h1>
 
-    <!-- Was a static "prescript device" label; now the Index Device toggle itself — click to flip
-         between Operational (accepting new prescripts) and Standby (see toggleDevice in script.js
-         and accepting_prescripts on UserProfile). -->
-    <button id="terminal" type="button" aria-pressed="true">Index Device: <span id="deviceStatusText">Operational</span></button>
+    <div class="grace-readout">
+        <div class="grace-readout__label">Grace</div>
+        <div class="grace-readout__value" id="grace" data-value="{{ grace }}">{{ grace }}</div>
+        <div class="grace-readout__delta" id="graceDelta" aria-hidden="true"></div>
+    </div>
 
-    <div id="userGreeting" class="user-greeting"></div>
+    <a href="/role/" class="rank-progress" id="rankProgress">
+        <span class="rank-progress__row">
+            <span class="rank-progress__rank" id="rankName">Civilian</span>
+            <span class="rank-progress__next" id="rankNext">&nbsp;</span>
+        </span>
+        <span class="meter"><span class="meter__fill" id="rankBar"></span></span>
+    </a>
 
-    <div id="grace">Grace: {{ grace }}</div>
+    <button id="requestPrescriptBtn" type="button" class="btn btn--primary btn--xl">
+        <span class="btn__label">Receive Prescript</span>
+    </button>
 
-    <button id="requestPrescriptBtn" onclick="requestPrescript()">Request Prescript</button>
+    <div id="status" class="status-line" role="status" aria-live="polite"></div>
+</section>
 
-    <div id="status" style="min-height: 35px;"></div>
-
-    <!-- Beep sound used by status animation -->
-    <audio id="beep" src="/static/limbus_index_beeper.mp3" preload="auto"></audio>
+<section class="inbox-section" aria-labelledby="inboxTitle">
+    <div class="section-head">
+        <h2 id="inboxTitle">Inbox</h2>
+        <span class="count-badge" id="inboxCount" hidden>0</span>
+    </div>
 
     <!-- Inbox: every unresolved prescript (scheduled push or self-requested) shows here as its
          own card, newest on top. Populated client-side by loadInbox() in script.js — see
-         get_inbox/request_prescript in views.py. A card is removed the moment its own
-         Complete/Ignore is tapped, so it never accumulates past what's actually still pending. -->
+         get_inbox/request_prescript in views.py. -->
     <div id="inbox" class="inbox"></div>
-
-    <img src="/static/index_logo.webp" alt="" width="363" height="426" class="home-logo">
-
-    <script src="/static/script.js"></script>
-    <script src="/static/pwa.js"></script>
-</body>
-
-</html>
+</section>
+{% endblock %}

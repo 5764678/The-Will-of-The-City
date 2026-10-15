@@ -1,36 +1,48 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>History</title>
-    <link rel="stylesheet" href="/static/style.css">
+{% extends "base.html" %}
+{% block title %}History · The Will of The City{% endblock %}
+{% block page_id %}history{% endblock %}
+{% block main_class %}page--history{% endblock %}
 
-    <link rel="manifest" href="/static/manifest.webmanifest">
-    <meta name="theme-color" content="#000000">
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
-    <link rel="shortcut icon" href="/static/icons/favicon.ico">
-    <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Will of the City">
-</head>
-<body>
-
-    <a href="/menu/" class="menu-toggle" aria-label="Open menu">☰</a>
-
-    <a href="/home/" class="return-button" aria-label="Return to Prescript's">←</a>
-
-    <img src="/static/index_logo.webp" class="page-logo" alt="Logo">
-
+{% block content %}
+<header class="page-head">
+    <p class="eyebrow">Record of procurations</p>
     <h1 id="historyHeader">History</h1>
+</header>
 
-    <div id="history">
-        <div class="history-empty" id="historyEmpty">No history yet — save a name from the menu to start tracking it.</div>
+<section class="stats" aria-label="Summary">
+    <div class="stat panel">
+        <span class="stat__label">Issued</span>
+        <span class="stat__value" id="statTotal">0</span>
     </div>
+    <div class="stat panel stat--clear">
+        <span class="stat__label">Cleared</span>
+        <span class="stat__value" id="statCompleted">0</span>
+    </div>
+    <div class="stat panel stat--failed">
+        <span class="stat__label">Ignored</span>
+        <span class="stat__value" id="statIgnored">0</span>
+    </div>
+    <div class="stat panel">
+        <span class="stat__label">Compliance</span>
+        <span class="stat__value"><span id="statRate">0</span>%</span>
+        <span class="meter meter--thin"><span class="meter__fill" id="statRateBar"></span></span>
+    </div>
+    <div class="stat panel">
+        <span class="stat__label">Current streak</span>
+        <span class="stat__value" id="statStreak">0</span>
+    </div>
+</section>
 
-    <script src="/static/script.js"></script>
-    <script src="/static/pwa.js"></script>
-</body>
-</html>
+<div class="segmented" role="tablist" aria-label="Filter history">
+    <button type="button" role="tab" class="segmented__btn is-active" aria-selected="true" data-filter="all">All</button>
+    <button type="button" role="tab" class="segmented__btn" aria-selected="false" data-filter="completed">Cleared</button>
+    <button type="button" role="tab" class="segmented__btn" aria-selected="false" data-filter="ignored">Ignored</button>
+</div>
+
+<div id="history" class="timeline">
+    <div class="empty-state" id="historyEmpty">
+        <span class="empty-state__ring" aria-hidden="true"></span>
+        <p>Reading the record…</p>
+    </div>
+</div>
+{% endblock %}

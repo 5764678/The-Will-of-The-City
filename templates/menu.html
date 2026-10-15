@@ -1,58 +1,51 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>Menu</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Terminal · The Will of The City{% endblock %}
+{% block page_id %}menu{% endblock %}
+{% block main_class %}page--menu{% endblock %}
 
-    <link rel="manifest" href="/static/manifest.webmanifest">
-    <meta name="theme-color" content="#000000">
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
-    <link rel="shortcut icon" href="/static/icons/favicon.ico">
-    <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Will of the City">
-</head>
-<body class="menu-page">
+{% block content %}
+<div class="terminal-grid">
+    <section class="panel identity">
+        <div class="identity__seal">
+            <img src="{% static 'detailed_index_logo.webp' %}" alt="The Index emblem" class="identity__logo">
+        </div>
 
-    <a href="/home/" class="menu-toggle" aria-label="Go to Prescript's">←</a>
-
-    <div class="menu">
-        <div class="menu-left">
-            <img src="/static/index_logo.webp" alt="Logo" class="menu-logo">
-            <div class="menu-username">
-                <label for="usernameInput">Your name</label>
-                <input id="usernameInput" type="text" placeholder="Enter your name" autocomplete="name">
-                <button id="btnSave">Save</button>
+        <form class="identity__form" id="nameForm" autocomplete="on">
+            <label for="usernameInput" class="field-label">Designation</label>
+            <div class="field-row">
+                <input id="usernameInput" type="text" placeholder="Enter your name" autocomplete="name" maxlength="150" spellcheck="false">
+                <button id="btnSave" type="submit" class="btn btn--primary">Save</button>
             </div>
+            <p class="field-hint" id="nameHint">Your name ties grace, history and notifications to you on every device.</p>
+        </form>
 
-            <div id="installBanner" class="notify-banner" style="display: none;">
+        <div class="identity__notify">
+            <div class="field-label">Notifications</div>
+            <div id="installBanner" class="notice" style="display: none;">
                 Add this to your Home Screen to receive prescripts as notifications: tap
-                <strong>Share</strong> → <strong>Add to Home Screen</strong>, then open it from
-                there.
+                <strong>Share</strong> → <strong>Add to Home Screen</strong>, then open it from there.
             </div>
-
             <div class="notify-controls">
-                <button id="installAppBtn" style="display: none;">Install App</button>
-                <button id="enableNotifyBtn" style="display: none;">Enable Notifications</button>
+                <button id="installAppBtn" type="button" class="btn" style="display: none;">Install App</button>
+                <button id="enableNotifyBtn" type="button" class="btn" style="display: none;">Enable Notifications</button>
                 <div id="notifyStatus" class="notify-status"></div>
             </div>
         </div>
-        <div class="menu-right">
-            <h2>Navigation</h2>
-            <nav class="menu-nav">
-                {% for link in menu_links %}
-                    <a href="{{ link.url }}" class="menu-link">{{ link.label }}</a>
-                {% endfor %}
-            </nav>
-        </div>
-    </div>
+    </section>
 
-    <script src="/static/script.js"></script>
-    <script src="/static/pwa.js"></script>
-</body>
-</html>
+    <section class="nav-tiles" aria-label="Sections">
+        <h1 class="section-title">Terminal</h1>
+        {% for link in menu_links %}
+            <a href="{{ link.url }}" class="nav-tile" style="--i: {{ forloop.counter0 }}">
+                <span class="nav-tile__index">0{{ forloop.counter }}</span>
+                <span class="nav-tile__body">
+                    <span class="nav-tile__label">{{ link.label }}</span>
+                    <span class="nav-tile__desc">{{ link.desc }}</span>
+                </span>
+                <span class="nav-tile__arrow" aria-hidden="true">→</span>
+            </a>
+        {% endfor %}
+    </section>
+</div>
+{% endblock %}

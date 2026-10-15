@@ -62,6 +62,14 @@ IGNORE_SPAM_THRESHOLD = 3
 # capped by MAX_CATCHUP and CATCHUP_MAX_AGE so a long outage produces a small catch-up burst, not
 # a replay of everything that was ever missed.
 SWEEP_INTERVAL = datetime.timedelta(minutes=15)
+
+# Slack on the due-check. Without it, a heartbeat running at exactly SWEEP_INTERVAL silently halves
+# the cadence: sent_at is stamped at the *end* of a request (after a Render cold start, which can
+# take 30-60s), so the next heartbeat 15:00 later sees e.g. 14:20 elapsed, finds nothing due, and
+# the send slips to the call after that — every 30 minutes instead of 15. Treating "within
+# tolerance of due" as due absorbs that drift; the cost is that a very frequent heartbeat can send
+# up to SWEEP_DUE_TOLERANCE early (13 minutes apart instead of 15), never two in one interval.
+SWEEP_DUE_TOLERANCE = datetime.timedelta(minutes=2)
 MAX_CATCHUP = 4
 CATCHUP_MAX_AGE = datetime.timedelta(hours=3)
 
@@ -247,10 +255,10 @@ class menuView(TemplateView): # This class defines the view for the menu page of
     def get_context_data(self, **kwargs): # This method prepares the context data for the menu page. It creates a list of dictionaries representing the menu links, where each dictionary contains a 'label' for the link text and a 'url' for the link destination. This list is added to the context dictionary that will be used in the template, allowing the template to dynamically generate the navigation menu based on this context data.
         context = super().get_context_data(**kwargs)
         context['menu_links'] = [
-            {'label': "Prescript's", 'url': '/home/'},
-            {'label': 'Role', 'url': '/role/'},
-            {'label': 'History', 'url': '/history/'},
-            {'label': 'About', 'url': '/about/'},
+            {'label': 'Prescripts', 'url': '/home/', 'desc': 'Your inbox. Receive, complete or ignore.'},
+            {'label': 'Role', 'url': '/role/', 'desc': 'Your rank and the ladder above it.'},
+            {'label': 'History', 'url': '/history/', 'desc': 'Every procuration on record.'},
+            {'label': 'About', 'url': '/about/', 'desc': 'A transmission from The Index.'},
             # Add additional menu entries here as you add new pages
         ]
         return context
@@ -459,9 +467,14 @@ def get_score(request): # This function retrieves the current score for a given 
 def get_history(request): # Returns this username's persisted prescript history as JSON, newest first. Replaces the old server-rendered global `history` list, which was shared by every visitor and lost on every restart.
     username = request.GET.get('username') or request.POST.get('username')
     items = []
+    totals = {'completed': 0, 'ignored': 0}
     if username:
         try:
             profile = UserProfile.objects.get(name=username)
+            totals = {
+                'completed': profile.history.filter(action=PrescriptHistory.COMPLETED).count(),
+                'ignored': profile.history.filter(action=PrescriptHistory.IGNORED).count(),
+            }
             items = [
                 {
                     'text': h.text,
@@ -476,7 +489,22 @@ def get_history(request): # Returns this username's persisted prescript history 
     return JsonResponse({
         'status': 'success',
         'history': items,
+        'totals': totals,
     })
+
+
+def _inbox_item(pending):
+    """One inbox entry as JSON — shared by get_inbox and request_prescript so both always hand the
+    page the same shape. reward/punishment let the card show its stakes; expires_at lets it count
+    down to PRESCRIPT_TIME_LIMIT instead of the page hard-coding that window."""
+    return {
+        'token': pending.token,
+        'text': pending.text,
+        'sent_at': pending.sent_at.isoformat(),
+        'expires_at': (pending.sent_at + PRESCRIPT_TIME_LIMIT).isoformat(),
+        'reward': pending.reward,
+        'punishment': pending.punishment,
+    }
 
 
 def get_inbox(request): # Returns this username's still-unresolved prescripts (see PendingNotification) newest first — the home page's inbox list.
@@ -486,10 +514,7 @@ def get_inbox(request): # Returns this username's still-unresolved prescripts (s
     items = []
     if username:
         rows = PendingNotification.objects.filter(username=username, resolved=False).order_by('-sent_at')[:50]
-        items = [
-            {'token': r.token, 'text': r.text, 'sent_at': r.sent_at.isoformat()}
-            for r in rows
-        ]
+        items = [_inbox_item(r) for r in rows]
 
     return JsonResponse({
         'status': 'success',
@@ -559,7 +584,7 @@ def request_prescript(request): # Generates a prescript on demand (the inbox's "
 
     return JsonResponse({
         'status': 'success',
-        'item': {'token': pending.token, 'text': pending.text, 'sent_at': pending.sent_at.isoformat()},
+        'item': _inbox_item(pending),
     })
 
 
@@ -637,13 +662,14 @@ def _missed_sweep_count(username):
         return 1  # deliberate welcome-prescript case — see docstring, not a floor on the general case
 
     elapsed = timezone.now() - last.sent_at
-    if elapsed < SWEEP_INTERVAL:
+    if elapsed < SWEEP_INTERVAL - SWEEP_DUE_TOLERANCE:
         return 0  # not due yet — the expected outcome for a call arriving sooner than SWEEP_INTERVAL
 
     if elapsed > CATCHUP_MAX_AGE:
         return 1  # too long a gap to treat as "late" — just resume, don't manufacture a backlog
 
-    return min(MAX_CATCHUP, elapsed // SWEEP_INTERVAL)  # >= 1 here: elapsed >= SWEEP_INTERVAL already established
+    # max(1, ...): elapsed can sit just under one full interval here (see SWEEP_DUE_TOLERANCE).
+    return min(MAX_CATCHUP, max(1, (elapsed + SWEEP_DUE_TOLERANCE) // SWEEP_INTERVAL))
 
 
 def _send_scheduled_prescript(base_url, username, context, allow_ntfy):
@@ -723,10 +749,14 @@ def notify_trigger(request):
 
     usernames, legacy_username = _scheduled_recipients()
     if not usernames:
+        # 200, not 500: "nobody is subscribed right now" isn't a server fault, and cron-job.org
+        # automatically disables a job after enough consecutive failed runs — a 500 here meant the
+        # scheduler could switch itself off during any stretch with no subscribers, and then stay
+        # off after someone did subscribe.
         return JsonResponse({
-            'status': 'error',
-            'detail': 'No recipients: nobody has an active Web Push subscription, and NOTIFY_USERNAME is not set',
-        }, status=500)
+            'status': 'no_recipients',
+            'detail': 'Nobody has an active Web Push subscription, and NOTIFY_USERNAME is not set',
+        })
 
     base_url = request.build_absolute_uri('/').rstrip('/')
     context = _current_notify_context()

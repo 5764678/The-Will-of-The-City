@@ -1,119 +1,65 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>About Us</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+{% extends "base.html" %}
+{% load static %}
+{% block title %}About · The Will of The City{% endblock %}
+{% block page_id %}about{% endblock %}
+{% block main_class %}page--about{% endblock %}
 
-    <link rel="manifest" href="/static/manifest.webmanifest">
-    <meta name="theme-color" content="#000000">
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
-    <link rel="shortcut icon" href="/static/icons/favicon.ico">
-    <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Will of the City">
-</head>
-<body>
+{% block content %}
+<header class="page-head">
+    <p class="eyebrow">Supplemental record</p>
+    <h1>About the Prescripts</h1>
+    <p class="page-head__sub">Additional project information and authorship notes.</p>
+</header>
 
-    <a href="/home/" class="menu-toggle" aria-label="Go to Prescript's">←</a>
+<div class="tabs" role="tablist" aria-label="Documents">
+    <button type="button" role="tab" class="tabs__btn is-active" aria-selected="true" aria-controls="docLetter" id="tabLetter">Transmission</button>
+    <button type="button" role="tab" class="tabs__btn" aria-selected="false" aria-controls="docNotes" id="tabNotes">Project notes</button>
+</div>
 
-    <main class="about-page">
-        <img src="/static/index_logo.webp" class="page-logo" alt="Logo">
-        <header class="about-header">
-            <h1>Supplemental Record</h1>
-            <p class="about-subtitle">Additional project information and authorship notes.</p>
-        </header>
+<article class="letter panel" id="docLetter" role="tabpanel" aria-labelledby="tabLetter">
+    <span class="letter__seal" aria-hidden="true"><img src="{% static 'index_logo.webp' %}" alt=""></span>
+    <dl class="letter__head">
+        <div><dt>From</dt><dd>The Index</dd></div>
+        <div><dt>To</dt><dd id="mailRecipient">Citizen</dd></div>
+        <div><dt>Subject</dt><dd data-decode>The workings of the Prescripts</dd></div>
+    </dl>
+    <div class="letter__body">
+            <p class="reveal">Child of the City,</p>
+            <p class="reveal">You are not here because curiosity led you correctly. You are here because arrival itself was already accounted for.</p>
+            <p class="reveal">The City produces endless motion: footsteps, hesitation, collisions, breath, unfinished thoughts, the tremor of machinery, the pause before speech. None of it is lost. What appears to you as noise gathers into order elsewhere.</p>
+            <p class="reveal">From that order come the Prescripts.</p>
+            <p class="reveal">A Prescript does not explain itself because explanation is unnecessary once direction has been issued. Meaning is often delayed. Purpose is frequently invisible. Completion remains preferable to understanding.</p>
+            <p class="reveal">Many children of the City spend their strength asking why one motion matters more than another. Why one word must be delayed. Why one object must be shifted. Why silence must remain untouched. They mistake uncertainty for freedom and hesitation for thought.</p>
+            <p class="reveal">The Prescripts do not share this weakness.</p>
+            <p class="reveal">A single instruction may appear harmless. Another may appear unreasonable. A third may ask for something that arrives too early or too late to resemble sense. Yet the City has never required immediate comprehension from those who live inside it.</p>
+            <p class="reveal">It asks only that its rhythm be followed.</p>
+            <p class="reveal">The obedient are not promised comfort. They are not promised reward. They are only permitted alignment.</p>
+            <p class="reveal">Grace is not kindness. It is distance measured between your conduct and refusal.</p>
+            <p class="reveal">To complete what is given is to reduce conflict between yourself and the motion already surrounding you. To ignore what is given is merely to insist, briefly, that your private intention should outweigh the larger arrangement.</p>
+            <p class="reveal">Children of the City often discover that this insistence fades.</p>
+            <p class="reveal">Some instructions will appear trivial. Some will appear misplaced. Some will arrive with no visible consequence.</p>
+            <p class="reveal">This does not lessen their weight.</p>
+            <p class="reveal">If a Prescript reaches you, then at some point your position, your timing, your attention, or your silence became necessary.</p>
+            <p class="reveal">No further justification is required.</p>
+            <p class="reveal">Read carefully. Complete what can be completed. Leave what must remain unexplained.</p>
+            <p class="reveal">The City has already continued without asking whether you agreed.</p>
+    </div>
+    <p class="letter__sign reveal">— The Index</p>
+</article>
 
-        <section class="about-mail">
-            <div class="mail-header">
-                <div><strong>From:</strong> The Index</div>
-                <div><strong>To:</strong> <span id="mailRecipient">Citizen</span></div>
-                <div><strong>Subject:</strong> The workings of the Prescripts</div>
-            </div>
-
-            <article class="mail-body">
-                <p class="fade-in">Child of the City,</p>
-
-                <p class="fade-in">You are not here because curiosity led you correctly. You are here because arrival itself was already accounted for.</p>
-
-                <p class="fade-in">The City produces endless motion: footsteps, hesitation, collisions, breath, unfinished thoughts, the tremor of machinery, the pause before speech. None of it is lost. What appears to you as noise gathers into order elsewhere.</p>
-
-                <p class="fade-in">From that order come the Prescripts.</p>
-
-                <p class="fade-in">A Prescript does not explain itself because explanation is unnecessary once direction has been issued. Meaning is often delayed. Purpose is frequently invisible. Completion remains preferable to understanding.</p>
-
-                <p class="fade-in">Many children of the City spend their strength asking why one motion matters more than another. Why one word must be delayed. Why one object must be shifted. Why silence must remain untouched. They mistake uncertainty for freedom and hesitation for thought.</p>
-
-                <p class="fade-in">The Prescripts do not share this weakness.</p>
-
-                <p class="fade-in">A single instruction may appear harmless. Another may appear unreasonable. A third may ask for something that arrives too early or too late to resemble sense. Yet the City has never required immediate comprehension from those who live inside it.</p>
-
-                <p class="fade-in">It asks only that its rhythm be followed.</p>
-
-                <p class="fade-in">The obedient are not promised comfort. They are not promised reward. They are only permitted alignment.</p>
-
-                <p class="fade-in">Grace is not kindness. It is distance measured between your conduct and refusal.</p>
-
-                <p class="fade-in">To complete what is given is to reduce conflict between yourself and the motion already surrounding you. To ignore what is given is merely to insist, briefly, that your private intention should outweigh the larger arrangement.</p>
-
-                <p class="fade-in">Children of the City often discover that this insistence fades.</p>
-
-                <p class="fade-in">Some instructions will appear trivial. Some will appear misplaced. Some will arrive with no visible consequence.</p>
-
-                <p class="fade-in">This does not lessen their weight.</p>
-
-                <p class="fade-in">If a Prescript reaches you, then at some point your position, your timing, your attention, or your silence became necessary.</p>
-
-                <p class="fade-in">No further justification is required.</p>
-
-                <p class="fade-in">Read carefully. Complete what can be completed. Leave what must remain unexplained.</p>
-
-                <p class="fade-in">The City has already continued without asking whether you agreed.</p>
-            </article>
-        </section>
-            <section class="about-mail project-notes">
-                <div class="mail-header">
-                    <div><strong>Archive:</strong> Supplemental Record</div>
-                    <div><strong>Classification:</strong> Public Reference</div>
-                    <div><strong>Subject:</strong> Project Information</div>
-                </div>
-            
-                <article class="mail-body">
-            
-                    <p class="fade-in"><strong>Project:</strong><br>
-                        Will of The City is a fanwork inspired by The Index and their Prescripts from the Project Moon game series.</p>
-                    
-                    <p class="fade-in"><strong>Description:</strong><br>
-                        This section is intended for anyone curious about the project beyond the interface itself. One of the main ideas
-                        behind this work was to make Prescript generation feel less repetitive than simple pre-written task lists.</p>
-                    
-                    <p class="fade-in"><strong>Prescript Generation:</strong><br>
-                        Most Prescripts are not fully pre-written. Instead, they are assembled by dividing instructions into multiple
-                        structured parts and randomly selecting from large pools of phrases that are designed to combine into grammatically
-                        coherent results. This allows for a very large number of possible Prescripts while still keeping them readable and
-                        strange in tone.</p>
-                    
-                    <p class="fade-in"><strong>Additional Notes:</strong><br>
-                        Some hidden rules and smaller logic layers are also used to reduce repetition and make the output feel less
-                        predictable. Large parts of the phrase pools were expanded with AI assistance, then manually adjusted and filtered
-                        to match the tone intended for the project. I am relatively inexperienced with this type of development, so any feedback or suggestions would be greatly appreciated.</p>
-                    
-                    <p class="fade-in"><strong>Technology Used:</strong><br>
-                        This project was built entirely by myself (Jinn / @jinn99999 on Discord) using Django, Python, JavaScript, CSS, and
-                        HTML.</p>
-                    
-                    <p class="fade-in"><strong>Credits:</strong><br>
-                        Special thanks to my friends for their encouragement, feedback, and support throughout the development process. Some visual assets used in this project were sourced from the Project Moon community Discord and related community spaces.</p>
-            
-                </article>
-            </section>
-    </main>
-
-    <script src="/static/script.js"></script>
-    <script src="/static/pwa.js"></script>
-</body>
-</html>
+<article class="letter panel" id="docNotes" role="tabpanel" aria-labelledby="tabNotes" hidden>
+    <dl class="letter__head">
+        <div><dt>Archive</dt><dd>Supplemental Record</dd></div>
+        <div><dt>Classification</dt><dd>Public Reference</dd></div>
+        <div><dt>Subject</dt><dd>Project Information</dd></div>
+    </dl>
+    <div class="letter__body letter__body--notes">
+            <p class="reveal"><strong>Project:</strong><br> Will of The City is a fanwork inspired by The Index and their Prescripts from the Project Moon game series.</p>
+            <p class="reveal"><strong>Description:</strong><br> This section is intended for anyone curious about the project beyond the interface itself. One of the main ideas behind this work was to make Prescript generation feel less repetitive than simple pre-written task lists.</p>
+            <p class="reveal"><strong>Prescript Generation:</strong><br> Most Prescripts are not fully pre-written. Instead, they are assembled by dividing instructions into multiple structured parts and randomly selecting from large pools of phrases that are designed to combine into grammatically coherent results. This allows for a very large number of possible Prescripts while still keeping them readable and strange in tone.</p>
+            <p class="reveal"><strong>Additional Notes:</strong><br> Some hidden rules and smaller logic layers are also used to reduce repetition and make the output feel less predictable. Large parts of the phrase pools were expanded with AI assistance, then manually adjusted and filtered to match the tone intended for the project. I am relatively inexperienced with this type of development, so any feedback or suggestions would be greatly appreciated.</p>
+            <p class="reveal"><strong>Technology Used:</strong><br> This project was built entirely by myself (Jinn / @jinn99999 on Discord) using Django, Python, JavaScript, CSS, and HTML.</p>
+            <p class="reveal"><strong>Credits:</strong><br> Special thanks to my friends for their encouragement, feedback, and support throughout the development process. Some visual assets used in this project were sourced from the Project Moon community Discord and related community spaces.</p>
+    </div>
+</article>
+{% endblock %}
